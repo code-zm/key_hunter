@@ -1,7 +1,7 @@
 use chrono::Utc;
 use clap::Parser;
 use colored::Colorize;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use key_hunter::cli::{Cli, Commands, OutputFormatter};
 use key_hunter::core::{Config, DetectedKey, HuntResults, SearchQuery, ValidatedKey};
 use key_hunter::detectors;
@@ -11,7 +11,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::time::Duration;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 use tracing_subscriber;
 
 #[tokio::main]
@@ -22,7 +22,8 @@ async fn main() {
     let cli = Cli::parse();
 
     // Initialize logging
-    let log_level = if cli.verbose { "debug" } else { "info" };
+    // In non-verbose mode, only show errors so progress bars work cleanly
+    let log_level = if cli.verbose { "debug" } else { "error" };
     tracing_subscriber::fmt()
         .with_env_filter(log_level)
         .with_target(false)
@@ -306,7 +307,6 @@ async fn search_command(
 
             // Auto-split queries by file type to bypass GitHub's 1000 result limit
             let qualifiers = generate_extension_qualifiers();
-            info!("Auto-splitting search across {} file type variations", qualifiers.len());
 
             let queries_to_run: Vec<String> = qualifiers
                 .iter()
@@ -315,13 +315,36 @@ async fn search_command(
                 })
                 .collect();
 
+            // Create multi-progress for spinner + progress bar
+            let multi = MultiProgress::new();
+
+            // Spinner for status messages
+            let spinner = multi.add(ProgressBar::new_spinner());
+            spinner.set_style(
+                ProgressStyle::default_spinner()
+                    .template("{spinner:.green} {msg}\n")
+                    .unwrap()
+            );
+            spinner.enable_steady_tick(Duration::from_millis(100));
+
+            // Progress bar for file type search
+            let search_pb = multi.add(ProgressBar::new(queries_to_run.len() as u64));
+            search_pb.set_style(
+                ProgressStyle::default_bar()
+                    .template("[{bar:40.cyan/blue}] {pos}/{len} {msg}")
+                    .unwrap()
+                    .progress_chars("=>-"),
+            );
+
             let mut total_results = Vec::new();
 
             // Execute the split queries
             for (sub_idx, sub_query_str) in queries_to_run.iter().enumerate() {
-                if sub_idx > 0 {
-                    println!("  {} File type {}/{}", "📂".bright_blue(), sub_idx + 1, queries_to_run.len());
-                }
+                let qualifier = &qualifiers[sub_idx];
+                spinner.set_message(format!("Searching {} | Total: {}",
+                    qualifier.green(),
+                    total_results.len().to_string().green()
+                ));
 
                 let query = SearchQuery {
                     query: sub_query_str.clone(),
@@ -336,23 +359,31 @@ async fn search_command(
                 // Search
                 match search_provider.search(&query).await {
                     Ok(search_results) => {
-                        let count = search_results.len();
                         total_results.extend(search_results);
-                        println!("    {} Found {} files (total: {})",
-                            "✓".green(), count, total_results.len());
+                        spinner.set_message(format!("Searching {} | Total: {}",
+                            qualifier.green(),
+                            total_results.len().to_string().green()
+                        ));
                     }
                     Err(e) => {
-                        warn!("Failed to search: {}", e);
+                        spinner.set_message(format!("Error: {} | Total: {}",
+                            e,
+                            total_results.len().to_string().green()
+                        ));
                         // Continue with next file type
-                        continue;
                     }
                 }
+
+                search_pb.inc(1);
 
                 // Small delay between sub-queries
                 if sub_idx < queries_to_run.len() - 1 {
                     tokio::time::sleep(Duration::from_millis(1000)).await;
                 }
             }
+
+            spinner.finish_and_clear();
+            search_pb.finish_and_clear();
 
             // Deduplicate results by file URL (same file can appear in multiple queries)
             let total_before_dedup = total_results.len();
@@ -362,15 +393,29 @@ async fn search_command(
                 .filter(|result| seen_urls.insert(result.file_url.clone()))
                 .collect();
 
-            if total_before_dedup != search_results.len() {
-                let duplicates_removed = total_before_dedup - search_results.len();
-                println!("  {} Removed {} duplicate files", "✓".green(), duplicates_removed);
-            }
+            let duplicates_removed = total_before_dedup - search_results.len();
+            println!("  {} Found {} unique files ({} duplicates removed)",
+                "✓".green(), search_results.len(), duplicates_removed);
 
-            println!("  {} Found {} unique files", "✓".green(), search_results.len());
+            // Create multi-progress for file scanning
+            let scan_multi = MultiProgress::new();
 
-            // Progress bar
-            let pb = ProgressBar::new(search_results.len() as u64);
+            // Spinner for validation status if validating
+            let scan_spinner = if validators.is_some() {
+                let spinner = scan_multi.add(ProgressBar::new_spinner());
+                spinner.set_style(
+                    ProgressStyle::default_spinner()
+                        .template("{spinner:.green} {msg}\n")
+                        .unwrap()
+                );
+                spinner.enable_steady_tick(Duration::from_millis(100));
+                Some(spinner)
+            } else {
+                None
+            };
+
+            // Progress bar for file scanning
+            let pb = scan_multi.add(ProgressBar::new(search_results.len() as u64));
             pb.set_style(
                 ProgressStyle::default_bar()
                     .template("[{bar:40.cyan/blue}] {pos}/{len} {msg}")
@@ -381,6 +426,13 @@ async fn search_command(
             // Process each file
             for search_result in search_results {
                 all_results.statistics.files_attempted += 1;
+
+                // Update spinner: searching for keys
+                if let Some(ref spinner) = scan_spinner {
+                    spinner.set_message(format!("Searching for keys | Valid: {}",
+                        all_results.statistics.keys_valid.to_string().green()
+                    ));
+                }
 
                 // Use text matches if available (much faster - no download needed!)
                 let content = if let Some(ref snippets) = search_result.text_matches {
@@ -418,16 +470,33 @@ async fn search_command(
                 // Process detected keys
                 for detected_key in detected_keys {
                     all_results.statistics.keys_found += 1;
-                    OutputFormatter::print_detected_key(
-                        &detected_key.key,
-                        &detected_key.key_type,
-                        &detected_key.file_path,
-                    );
+
+                    // Update spinner: key found
+                    if let Some(ref spinner) = scan_spinner {
+                        spinner.set_message(format!("Key found | Valid: {}",
+                            all_results.statistics.keys_valid.to_string().green()
+                        ));
+                    }
 
                     // Validate immediately if requested
                     if let Some(ref validators) = validators {
                         if let Some(validator) = validators.get(&detected_key.key_type) {
                             all_results.statistics.keys_tested += 1;
+
+                            // Truncate key for display
+                            let key_preview = if detected_key.key.len() > 20 {
+                                format!("{}...", &detected_key.key[..20])
+                            } else {
+                                detected_key.key.clone()
+                            };
+
+                            // Update spinner: validating key
+                            if let Some(ref spinner) = scan_spinner {
+                                spinner.set_message(format!("Validating {} | Valid: {}",
+                                    key_preview.green(),
+                                    all_results.statistics.keys_valid.to_string().green()
+                                ));
+                            }
 
                             // Rate limit
                             tokio::time::sleep(validator.rate_limit()).await;
@@ -439,8 +508,6 @@ async fn search_command(
                                         validation: validation.clone(),
                                         validated_at: Utc::now(),
                                     };
-
-                                    OutputFormatter::print_validation_result(&validated);
 
                                     if validation.valid {
                                         all_results.statistics.keys_valid += 1;
@@ -454,11 +521,8 @@ async fn search_command(
                                         all_results.invalid_keys.push(validated);
                                     }
                                 }
-                                Err(e) => {
-                                    OutputFormatter::print_warning(&format!(
-                                        "Validation error: {}",
-                                        e
-                                    ));
+                                Err(_e) => {
+                                    // Silently continue - spinner shows overall progress
                                 }
                             }
                         }
@@ -468,6 +532,9 @@ async fn search_command(
                 pb.inc(1);
             }
 
+            if let Some(spinner) = scan_spinner {
+                spinner.finish_and_clear();
+            }
             pb.finish_and_clear();
 
             // Rate limit between queries
@@ -529,8 +596,26 @@ async fn validate_command(
 
     let mut results = HuntResults::default();
 
-    // Progress bar
-    let pb = ProgressBar::new(detected_keys.len() as u64);
+    // Create multi-progress for validation
+    let val_multi = MultiProgress::new();
+
+    // Spinner for validation status
+    let val_spinner = val_multi.add(ProgressBar::new_spinner());
+    val_spinner.set_style(
+        ProgressStyle::default_spinner()
+            .template("{spinner:.green} {msg}\n")
+            .unwrap()
+    );
+    val_spinner.enable_steady_tick(Duration::from_millis(100));
+
+    // Progress bar for validation
+    let pb = val_multi.add(ProgressBar::new(detected_keys.len() as u64));
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("[{bar:40.cyan/blue}] {pos}/{len} {msg}")
+            .unwrap()
+            .progress_chars("=>-"),
+    );
 
     for detected_key in detected_keys {
         // Skip if not matching key type filter
@@ -540,6 +625,19 @@ async fn validate_command(
         }
 
         if let Some(validator) = validators.get(&detected_key.key_type) {
+            // Truncate key for display
+            let key_preview = if detected_key.key.len() > 20 {
+                format!("{}...", &detected_key.key[..20])
+            } else {
+                detected_key.key.clone()
+            };
+
+            // Update spinner: validating key
+            val_spinner.set_message(format!("Validating {} | Valid: {}",
+                key_preview.green(),
+                results.valid_keys.len().to_string().green()
+            ));
+
             // Rate limit
             tokio::time::sleep(validator.rate_limit()).await;
 
@@ -561,8 +659,8 @@ async fn validate_command(
                         results.invalid_keys.push(validated);
                     }
                 }
-                Err(e) => {
-                    error!("Validation error for {}: {}", detected_key.key, e);
+                Err(_e) => {
+                    // Silently continue - spinner shows overall progress
                 }
             }
         }
@@ -570,6 +668,7 @@ async fn validate_command(
         pb.inc(1);
     }
 
+    val_spinner.finish_and_clear();
     pb.finish_and_clear();
 
     results.timestamp = Utc::now();
