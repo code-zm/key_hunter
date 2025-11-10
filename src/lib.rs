@@ -35,6 +35,7 @@ pub mod cli;
 pub mod core;
 pub mod detectors;
 pub mod providers;
+pub mod reporters;
 pub mod utils;
 pub mod validators;
 
@@ -46,4 +47,5 @@ pub use core::{
 
 pub use detectors::{all_detectors, get_detector};
 pub use providers::GitHubProvider;
+pub use reporters::{all_reporters, get_reporter, GitHubIssueClient};
 pub use validators::{all_validators, get_validator};

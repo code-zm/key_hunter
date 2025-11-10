@@ -28,29 +28,13 @@ pub enum Commands {
         #[arg(short, long)]
         query: Option<String>,
 
-        /// Maximum results per query (GitHub max is 1000)
-        #[arg(short, long, default_value = "1000")]
-        max_results: usize,
-
-        /// Number of queries to run (if using default queries)
-        #[arg(short = 'n', long, default_value = "3")]
-        num_queries: usize,
-
-        /// GitHub token for authenticated requests (can also use GITHUB_TOKEN env var)
-        #[arg(long)]
-        github_token: Option<String>,
-
         /// Output file for results (default: results/<key-type>/valid_keys_<timestamp>.json)
         #[arg(short, long)]
         output: Option<String>,
 
-        /// Test keys immediately as they're found
-        #[arg(short, long)]
-        test_immediately: bool,
-
-        /// Automatically split queries by file type/extension to get past GitHub's 1000 result limit
+        /// Validate keys immediately as they're found
         #[arg(long)]
-        auto_split: bool,
+        validate: bool,
     },
 
     /// Validate keys from a file
@@ -78,25 +62,25 @@ pub enum Commands {
         key_type: String,
     },
 
-    /// Generate a report from results
-    Report {
-        /// Input file with results
-        #[arg(short, long)]
-        input: String,
-
-        /// Output format (json, csv, html, text)
-        #[arg(short, long, default_value = "text")]
-        format: String,
-
-        /// Output file (default: stdout)
-        #[arg(short, long)]
-        output: Option<String>,
-    },
-
     /// List available detectors and validators
     List {
         /// What to list (detectors, validators, all)
         #[arg(default_value = "all")]
         what: String,
+    },
+
+    /// Create GitHub issues for exposed keys
+    Report {
+        /// Directory containing result files (default: results/)
+        #[arg(short, long, default_value = "results")]
+        results_dir: String,
+
+        /// Filter by key type (shodan, claude, openai, all)
+        #[arg(short, long, default_value = "all")]
+        key_type: String,
+
+        /// Dry run - print issues without creating them
+        #[arg(long)]
+        dry_run: bool,
     },
 }

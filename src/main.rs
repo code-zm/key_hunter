@@ -44,23 +44,15 @@ async fn execute_command(command: Commands) -> key_hunter::Result<()> {
             provider,
             key_type,
             query,
-            max_results,
-            num_queries,
-            github_token,
             output,
-            test_immediately,
-            auto_split,
+            validate,
         } => {
             search_command(
                 provider,
                 key_type,
                 query,
-                max_results,
-                num_queries,
-                github_token,
                 output,
-                test_immediately,
-                auto_split,
+                validate,
             )
             .await?;
         }
@@ -74,15 +66,15 @@ async fn execute_command(command: Commands) -> key_hunter::Result<()> {
         Commands::Test { key, key_type } => {
             test_command(key, key_type).await?;
         }
-        Commands::Report {
-            input,
-            format,
-            output,
-        } => {
-            report_command(input, format, output)?;
-        }
         Commands::List { what } => {
             list_command(what)?;
+        }
+        Commands::Report {
+            results_dir,
+            key_type,
+            dry_run,
+        } => {
+            report_command(results_dir, key_type, dry_run).await?;
         }
     }
 
@@ -226,32 +218,41 @@ async fn search_command(
     provider: String,
     key_type: String,
     custom_query: Option<String>,
-    _max_results: usize,
-    num_queries: usize,
-    github_token: Option<String>,
     output_file: Option<String>,
-    test_immediately: bool,
-    auto_split: bool,
+    validate: bool,
 ) -> key_hunter::Result<()> {
     OutputFormatter::print_ethical_warning();
 
     // Load config
     let config = load_config()?;
 
-    // Get GitHub token from CLI arg or environment variable
-    let token = github_token.or_else(|| std::env::var("GITHUB_TOKEN").ok());
+    // Get GitHub tokens from environment - supports GITHUB_TOKEN1 through GITHUB_TOKEN5
+    let mut tokens = Vec::new();
+    for i in 1..=5 {
+        if let Ok(token) = std::env::var(format!("GITHUB_TOKEN{}", i)) {
+            if !token.is_empty() {
+                tokens.push(token);
+            }
+        }
+    }
+
+    if !tokens.is_empty() {
+        info!("Using {} GitHub token(s)", tokens.len());
+    } else {
+        warn!("No GitHub tokens found (GITHUB_TOKEN1-5). Running unauthenticated with severe rate limits.");
+    }
 
     // Get the appropriate search provider
     let search_provider: Box<dyn key_hunter::SearchProvider> = match provider.as_str() {
         "github" => {
             if let Some(github_config) = config.github {
                 Box::new(GitHubProvider::with_config(
-                    token,
+                    tokens,
                     github_config.base_url,
                     github_config.rate_limit_delay_ms,
                 ))
             } else {
-                Box::new(GitHubProvider::new(token))
+                Box::new(GitHubProvider::new(tokens))
             }
         }
         _ => {
@@ -271,14 +272,12 @@ async fn search_command(
         })?]
     };
 
-    // Get validators if testing immediately
-    let validators = if test_immediately {
+    // Get validators if validating immediately
+    let validators = if validate {
         Some(validators::all_validators())
     } else {
         None
     };
-
-    OutputFormatter::print_search_start(&provider, &key_type, num_queries);
 
     let mut all_results = HuntResults::default();
 
@@ -286,16 +285,14 @@ async fn search_command(
     for detector in &detectors {
         info!("Searching for {} keys", detector.name());
 
-        // Get search queries
+        // Get search queries - use all available queries
         let queries: Vec<String> = if let Some(ref q) = custom_query {
             vec![q.clone()]
         } else {
-            detector
-                .search_queries()
-                .into_iter()
-                .take(num_queries)
-                .collect()
+            detector.search_queries()
         };
+
+        OutputFormatter::print_search_start(&provider, &key_type, queries.len());
 
         // Execute each query
         for (idx, query_str) in queries.iter().enumerate() {
@@ -307,33 +304,28 @@ async fn search_command(
                 query_str.bright_cyan()
             );
 
-            // Determine if we should auto-split this query
-            let queries_to_run: Vec<String> = if auto_split {
-                // Generate extension/file qualifiers
-                let qualifiers = generate_extension_qualifiers();
-                info!("Auto-split enabled: will search across {} file type variations", qualifiers.len());
+            // Auto-split queries by file type to bypass GitHub's 1000 result limit
+            let qualifiers = generate_extension_qualifiers();
+            info!("Auto-splitting search across {} file type variations", qualifiers.len());
 
-                qualifiers
-                    .iter()
-                    .map(|qualifier| {
-                        format!("{} {}", query_str, qualifier)
-                    })
-                    .collect()
-            } else {
-                vec![query_str.clone()]
-            };
+            let queries_to_run: Vec<String> = qualifiers
+                .iter()
+                .map(|qualifier| {
+                    format!("{} {}", query_str, qualifier)
+                })
+                .collect();
 
             let mut total_results = Vec::new();
 
-            // Execute the query (or multiple queries if auto-split)
+            // Execute the split queries
             for (sub_idx, sub_query_str) in queries_to_run.iter().enumerate() {
-                if auto_split && sub_idx > 0 {
+                if sub_idx > 0 {
                     println!("  {} File type {}/{}", "📂".bright_blue(), sub_idx + 1, queries_to_run.len());
                 }
 
                 let query = SearchQuery {
                     query: sub_query_str.clone(),
-                    max_results: 1000, // Always fetch max when auto-splitting
+                    max_results: 1000, // GitHub's max
                     file_extensions: detector
                         .file_extensions()
                         .iter()
@@ -346,29 +338,23 @@ async fn search_command(
                     Ok(search_results) => {
                         let count = search_results.len();
                         total_results.extend(search_results);
-
-                        if auto_split {
-                            println!("    {} Found {} files (total: {})",
-                                "✓".green(), count, total_results.len());
-                        }
+                        println!("    {} Found {} files (total: {})",
+                            "✓".green(), count, total_results.len());
                     }
                     Err(e) => {
                         warn!("Failed to search: {}", e);
-                        if !auto_split {
-                            return Err(e);
-                        }
-                        // Continue with next month if auto-splitting
+                        // Continue with next file type
                         continue;
                     }
                 }
 
                 // Small delay between sub-queries
-                if auto_split && sub_idx < queries_to_run.len() - 1 {
-                    tokio::time::sleep(Duration::from_millis(500)).await;
+                if sub_idx < queries_to_run.len() - 1 {
+                    tokio::time::sleep(Duration::from_millis(1000)).await;
                 }
             }
 
-            // Deduplicate results by file URL (same file can appear in multiple queries when auto-splitting)
+            // Deduplicate results by file URL (same file can appear in multiple queries)
             let total_before_dedup = total_results.len();
             let mut seen_urls = HashSet::new();
             let search_results: Vec<_> = total_results
@@ -376,12 +362,12 @@ async fn search_command(
                 .filter(|result| seen_urls.insert(result.file_url.clone()))
                 .collect();
 
-            if auto_split && total_before_dedup != search_results.len() {
+            if total_before_dedup != search_results.len() {
                 let duplicates_removed = total_before_dedup - search_results.len();
                 println!("  {} Removed {} duplicate files", "✓".green(), duplicates_removed);
             }
 
-            println!("  {} Found {} files total", "✓".green(), search_results.len());
+            println!("  {} Found {} unique files", "✓".green(), search_results.len());
 
             // Progress bar
             let pb = ProgressBar::new(search_results.len() as u64);
@@ -629,33 +615,6 @@ async fn test_command(key: String, key_type: String) -> key_hunter::Result<()> {
     Ok(())
 }
 
-fn report_command(input: String, format: String, output: Option<String>) -> key_hunter::Result<()> {
-    OutputFormatter::print_info(&format!("Generating {} report from {}", format, input));
-
-    let json = fs::read_to_string(&input)?;
-    let results: HuntResults = serde_json::from_str(&json)?;
-
-    let report = match format.as_str() {
-        "json" => serde_json::to_string_pretty(&results)?,
-        "text" => generate_text_report(&results),
-        _ => {
-            return Err(key_hunter::KeyHunterError::Config(format!(
-                "Unknown format: {}",
-                format
-            )));
-        }
-    };
-
-    if let Some(output_file) = output {
-        fs::write(&output_file, report)?;
-        OutputFormatter::print_success(&format!("Report saved to {}", output_file));
-    } else {
-        println!("\n{}", report);
-    }
-
-    Ok(())
-}
-
 fn list_command(what: String) -> key_hunter::Result<()> {
     match what.as_str() {
         "detectors" | "all" => {
@@ -684,26 +643,126 @@ fn list_command(what: String) -> key_hunter::Result<()> {
     Ok(())
 }
 
-fn generate_text_report(results: &HuntResults) -> String {
-    let mut report = String::new();
+async fn report_command(
+    results_dir: String,
+    key_type_filter: String,
+    dry_run: bool,
+) -> key_hunter::Result<()> {
+    // Load GitHub token from environment
+    let github_token = std::env::var("ISSUES_GITHUB_API_TOKEN").map_err(|_| {
+        key_hunter::KeyHunterError::Config(
+            "ISSUES_GITHUB_API_TOKEN environment variable not set. Please set it in your .env file.".to_string()
+        )
+    })?;
 
-    report.push_str(&format!("Key Hunter Report\n"));
-    report.push_str(&format!("Generated: {}\n\n", results.timestamp));
+    if dry_run {
+        OutputFormatter::print_info("Running in DRY RUN mode - no issues will be created\n");
+    }
 
-    report.push_str(&format!("Summary:\n"));
-    report.push_str(&format!("  Total keys: {}\n", results.total_keys_found));
-    report.push_str(&format!("  Valid: {}\n", results.valid_keys.len()));
-    report.push_str(&format!("  Invalid: {}\n\n", results.invalid_keys.len()));
+    OutputFormatter::print_info(&format!("Reading results from {}\n", results_dir));
 
-    if !results.valid_keys.is_empty() {
-        report.push_str("Valid Keys:\n");
-        for (idx, key) in results.valid_keys.iter().enumerate() {
-            report.push_str(&format!("\n[{}] {}\n", idx + 1, key.detected.key_type));
-            report.push_str(&format!("  Repository: {}\n", key.detected.repository));
-            report.push_str(&format!("  File: {}\n", key.detected.file_path));
-            report.push_str(&format!("  URL: {}\n", key.detected.file_url));
+    // Read all JSON files from results directory
+    let results_path = Path::new(&results_dir);
+    if !results_path.exists() {
+        return Err(key_hunter::KeyHunterError::NotFound(format!(
+            "Results directory not found: {}",
+            results_dir
+        )));
+    }
+
+    let mut all_validated_keys = Vec::new();
+
+    // Iterate through each key type directory
+    for entry in fs::read_dir(results_path)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        if !path.is_dir() {
+            continue;
+        }
+
+        // Read all JSON files in this key type directory
+        for json_entry in fs::read_dir(&path)? {
+            let json_entry = json_entry?;
+            let json_path = json_entry.path();
+
+            if json_path.extension().and_then(|s| s.to_str()) != Some("json") {
+                continue;
+            }
+
+            // Read and parse JSON file
+            match fs::read_to_string(&json_path) {
+                Ok(json_content) => {
+                    #[derive(serde::Deserialize)]
+                    struct ResultFile {
+                        key_type: String,
+                        valid_keys: Vec<ValidatedKey>,
+                    }
+
+                    match serde_json::from_str::<ResultFile>(&json_content) {
+                        Ok(result_file) => {
+                            // Filter by key type if specified
+                            if key_type_filter == "all" || result_file.key_type == key_type_filter {
+                                let count = result_file.valid_keys.len();
+                                all_validated_keys.extend(result_file.valid_keys);
+                                println!(
+                                    "Loaded {} keys from {}",
+                                    count,
+                                    json_path.display()
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Failed to parse {}: {}", json_path.display(), e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to read {}: {}", json_path.display(), e);
+                }
+            }
         }
     }
 
-    report
+    if all_validated_keys.is_empty() {
+        OutputFormatter::print_info("\nNo valid keys found to report");
+        return Ok(());
+    }
+
+    println!(
+        "\nFound {} validated keys across all result files\n",
+        all_validated_keys.len()
+    );
+
+    // Create GitHub issue client
+    let issue_client = key_hunter::GitHubIssueClient::new(github_token, dry_run);
+
+    // Create issues
+    let stats = issue_client.create_issues_bulk(&all_validated_keys).await?;
+
+    // Print summary
+    println!("\n{}", "=".repeat(80));
+    println!("Summary:");
+    println!("   Total keys: {}", stats.total);
+    println!("   Issues created: {}", stats.success);
+    println!("   Failed: {}", stats.failed);
+    println!("   Skipped: {}", stats.skipped);
+
+    if !stats.errors.is_empty() {
+        println!("\nErrors:");
+        for error in &stats.errors {
+            println!("   {}", error);
+        }
+    }
+
+    if !dry_run && !stats.issue_urls.is_empty() {
+        println!("\nCreated issues:");
+        for url in &stats.issue_urls {
+            println!("   {}", url);
+        }
+    }
+
+    println!("{}", "=".repeat(80));
+
+    Ok(())
 }

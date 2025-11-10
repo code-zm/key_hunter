@@ -41,24 +41,45 @@ fn default_branch() -> String {
 }
 
 pub struct GitHubProvider {
-    token: Option<String>,
+    tokens: Vec<String>,
+    current_token_idx: std::sync::Arc<std::sync::Mutex<usize>>,
     base_url: String,
     rate_limiter: RateLimiter,
 }
 
 impl GitHubProvider {
-    pub fn new(token: Option<String>) -> Self {
-        Self::with_config(token, "https://api.github.com".to_string(), 2000)
+    pub fn new(tokens: Vec<String>) -> Self {
+        Self::with_config(tokens, "https://api.github.com".to_string(), 2000)
     }
 
-    pub fn with_config(token: Option<String>, base_url: String, rate_limit_ms: u64) -> Self {
+    pub fn with_config(tokens: Vec<String>, base_url: String, rate_limit_ms: u64) -> Self {
         let rate_limiter = RateLimiter::with_delay(Duration::from_millis(rate_limit_ms));
 
         Self {
-            token,
+            tokens,
+            current_token_idx: std::sync::Arc::new(std::sync::Mutex::new(0)),
             base_url,
             rate_limiter,
         }
+    }
+
+    fn get_current_token(&self) -> Option<String> {
+        if self.tokens.is_empty() {
+            return None;
+        }
+        let idx = *self.current_token_idx.lock().unwrap();
+        Some(self.tokens[idx].clone())
+    }
+
+    fn rotate_token(&self) -> Option<String> {
+        if self.tokens.is_empty() {
+            return None;
+        }
+        let mut idx = self.current_token_idx.lock().unwrap();
+        *idx = (*idx + 1) % self.tokens.len();
+        let new_token = self.tokens[*idx].clone();
+        info!("Rotating to token {} of {}", *idx + 1, self.tokens.len());
+        Some(new_token)
     }
 
     async fn fetch_page(&self, url: &str, token_opt: Option<String>) -> Result<crate::utils::HttpResponse> {
@@ -109,10 +130,24 @@ impl SearchProvider for GitHubProvider {
 
         self.rate_limiter.wait().await;
 
-        let token_opt = self.token.clone();
-        let first_result = self.fetch_page(&first_url, token_opt.clone()).await?;
+        let mut token_opt = self.get_current_token();
+        let mut first_result = self.fetch_page(&first_url, token_opt.clone()).await?;
 
-        if first_result.is_rate_limited() {
+        // If rate limited and we have multiple tokens, try rotating
+        if first_result.is_rate_limited() && self.tokens.len() > 1 {
+            warn!("Rate limit hit, rotating to next token...");
+            token_opt = self.rotate_token();
+            first_result = self.fetch_page(&first_url, token_opt.clone()).await?;
+
+            // If still rate limited after trying all tokens, wait
+            if first_result.is_rate_limited() {
+                warn!("All tokens rate limited, waiting 60 seconds...");
+                tokio::time::sleep(Duration::from_secs(60)).await;
+                return Err(KeyHunterError::RateLimit(
+                    "GitHub API rate limit exceeded for all tokens".to_string(),
+                ));
+            }
+        } else if first_result.is_rate_limited() {
             warn!("GitHub rate limit hit, waiting 60 seconds...");
             tokio::time::sleep(Duration::from_secs(60)).await;
             return Err(KeyHunterError::RateLimit(
@@ -135,11 +170,11 @@ impl SearchProvider for GitHubProvider {
         // Add first page results
         all_results.extend(first_response.items);
 
-        // Calculate how many more pages we need
-        let total_pages = ((total_count as usize / per_page).min(max_pages)).max(1);
+        // Calculate how many more pages we need (use ceiling division to get partial pages)
+        let total_pages = ((total_count as usize + per_page - 1) / per_page).min(max_pages).max(1);
 
         if total_pages > 1 && all_results.len() < query.max_results {
-            info!("Fetching {} additional pages...", total_pages - 1);
+            info!("Fetching {} additional pages ({} total)...", total_pages - 1, total_pages);
 
             for page in 2..=total_pages {
                 if all_results.len() >= query.max_results {
@@ -157,38 +192,52 @@ impl SearchProvider for GitHubProvider {
                 // Rate limiting handled by rate_limiter
                 self.rate_limiter.wait().await;
 
-                match self.fetch_page(&page_url, token_opt.clone()).await {
-                    Ok(response) => {
-                        if response.is_rate_limited() {
-                            warn!("Rate limited on page {}, waiting 60s...", page);
-                            tokio::time::sleep(Duration::from_secs(60)).await;
-                            continue;
-                        }
+                let mut response = match self.fetch_page(&page_url, token_opt.clone()).await {
+                    Ok(r) => r,
+                    Err(e) => {
+                        warn!("Error fetching page {}: {}", page, e);
+                        break;
+                    }
+                };
 
-                        if !response.is_success() {
-                            warn!("Error on page {}: HTTP {}", page, response.status_code);
+                // If rate limited and we have multiple tokens, try rotating
+                if response.is_rate_limited() && self.tokens.len() > 1 {
+                    warn!("Rate limited on page {}, rotating to next token...", page);
+                    token_opt = self.rotate_token();
+                    response = match self.fetch_page(&page_url, token_opt.clone()).await {
+                        Ok(r) => r,
+                        Err(e) => {
+                            warn!("Error after token rotation: {}", e);
                             break;
                         }
+                    };
+                }
 
-                        match response.json::<GitHubSearchResponse>() {
-                            Ok(page_response) => {
-                                let items_count = page_response.items.len();
-                                all_results.extend(page_response.items);
-                                debug!("Page {}/{}: +{} results (total: {})",
-                                    page, total_pages, items_count, all_results.len());
+                // If still rate limited, wait and continue
+                if response.is_rate_limited() {
+                    warn!("Rate limited on page {}, waiting 60s...", page);
+                    tokio::time::sleep(Duration::from_secs(60)).await;
+                    continue;
+                }
 
-                                if items_count == 0 {
-                                    break;
-                                }
-                            }
-                            Err(e) => {
-                                warn!("Failed to parse page {}: {}", page, e);
-                                break;
-                            }
+                if !response.is_success() {
+                    warn!("Error on page {}: HTTP {}", page, response.status_code);
+                    break;
+                }
+
+                match response.json::<GitHubSearchResponse>() {
+                    Ok(page_response) => {
+                        let items_count = page_response.items.len();
+                        all_results.extend(page_response.items);
+                        debug!("Page {}/{}: +{} results (total: {})",
+                            page, total_pages, items_count, all_results.len());
+
+                        if items_count == 0 {
+                            break;
                         }
                     }
                     Err(e) => {
-                        warn!("Failed to fetch page {}: {}", page, e);
+                        warn!("Failed to parse page {}: {}", page, e);
                         break;
                     }
                 }
