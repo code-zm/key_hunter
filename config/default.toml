@@ -1,0 +1,57 @@
+# Key Hunter Configuration
+# This file will be automatically loaded from:
+#   1. config/default.toml (recommended)
+#   2. default.toml
+#   3. .key_hunter.toml
+
+[github]
+# GitHub API base URL (usually don't need to change this)
+base_url = "https://api.github.com"
+
+# Rate limit delay in milliseconds between requests
+# GitHub Code Search has strict rate limits + secondary limits
+# With token: 3000ms (20 req/min) recommended to avoid rate limit errors
+# Without token: 6000ms (10 req/min)
+# Lower values = faster but WILL hit rate limits (especially with --auto-split)
+# Higher values = slower but no 60-second waits
+rate_limit_delay_ms = 3000
+
+[output]
+# Default output format (json, csv, html, text)
+format = "json"
+
+# Output directory for results
+directory = "./output"
+
+# Save invalid/rotated keys to output files
+save_invalid = true
+
+# Detector configurations
+# Set enabled = false to disable specific detectors
+
+[detectors.shodan]
+enabled = true
+
+[detectors.openai]
+enabled = true
+
+[detectors.claude]
+enabled = true
+
+[detectors.aws]
+enabled = true
+
+[detectors.stripe]
+enabled = true
+
+[detectors.slack]
+enabled = true
+
+[detectors.google]
+enabled = true
+
+[detectors.github_token]
+enabled = true
+
+[detectors.misc]
+enabled = true
