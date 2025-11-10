@@ -748,9 +748,9 @@ async fn report_command(
     dry_run: bool,
 ) -> key_hunter::Result<()> {
     // Load GitHub token from environment
-    let github_token = std::env::var("ISSUES_GITHUB_API_TOKEN").map_err(|_| {
+    let github_token = std::env::var("ISSUES_GITHUB_TOKEN").map_err(|_| {
         key_hunter::KeyHunterError::Config(
-            "ISSUES_GITHUB_API_TOKEN environment variable not set. Please set it in your .env file.".to_string()
+            "ISSUES_GITHUB_TOKEN environment variable not set. Please set it in your .env file.".to_string()
         )
     })?;
 
