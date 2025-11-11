@@ -48,8 +48,8 @@ pub struct GitHubProvider {
 }
 
 impl GitHubProvider {
-    pub fn new(tokens: Vec<String>) -> Self {
-        Self::with_config(tokens, "https://api.github.com".to_string(), 2000)
+    pub fn new(tokens: Vec<String>, rate_limit_ms: u64) -> Self {
+        Self::with_config(tokens, "https://api.github.com".to_string(), rate_limit_ms)
     }
 
     pub fn with_config(tokens: Vec<String>, base_url: String, rate_limit_ms: u64) -> Self {
@@ -340,13 +340,13 @@ mod tests {
 
     #[test]
     fn test_github_provider_creation() {
-        let provider = GitHubProvider::new(None);
+        let provider = GitHubProvider::new(vec![], 2000);
         assert_eq!(provider.name(), "github");
     }
 
     #[test]
     fn test_github_provider_with_token() {
-        let provider = GitHubProvider::new(Some("ghp_test123".to_string()));
+        let provider = GitHubProvider::new(vec!["ghp_test123".to_string()], 2000);
         assert_eq!(provider.name(), "github");
     }
 

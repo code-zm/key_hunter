@@ -15,17 +15,19 @@ struct ShodanApiInfo {
     https: Option<bool>,
 }
 
-pub struct ShodanValidator;
+pub struct ShodanValidator {
+    rate_limit_ms: u64,
+}
 
 impl ShodanValidator {
-    pub fn new() -> Self {
-        Self
+    pub fn new(rate_limit_ms: u64) -> Self {
+        Self { rate_limit_ms }
     }
 }
 
 impl Default for ShodanValidator {
     fn default() -> Self {
-        Self::new()
+        Self::new(1000)
     }
 }
 
@@ -127,9 +129,7 @@ impl KeyValidator for ShodanValidator {
     }
 
     fn rate_limit(&self) -> Duration {
-        // Shodan has strict rate limits - 2.5 seconds between validation requests
-        // This ensures we stay well under their limits even when validating many keys
-        Duration::from_millis(2500)
+        Duration::from_millis(self.rate_limit_ms)
     }
 }
 
@@ -139,13 +139,13 @@ mod tests {
 
     #[test]
     fn test_shodan_validator_creation() {
-        let validator = ShodanValidator::new();
+        let validator = ShodanValidator::default();
         assert_eq!(validator.key_type(), "shodan");
     }
 
     #[tokio::test]
     async fn test_validate_invalid_key() {
-        let validator = ShodanValidator::new();
+        let validator = ShodanValidator::default();
         let result = validator.validate("invalidshodankey1234567890ab").await;
 
         assert!(result.is_ok());

@@ -15,17 +15,19 @@ struct GitHubUser {
     user_type: Option<String>,
 }
 
-pub struct GitHubValidator;
+pub struct GitHubValidator {
+    rate_limit_ms: u64,
+}
 
 impl GitHubValidator {
-    pub fn new() -> Self {
-        Self
+    pub fn new(rate_limit_ms: u64) -> Self {
+        Self { rate_limit_ms }
     }
 }
 
 impl Default for GitHubValidator {
     fn default() -> Self {
-        Self::new()
+        Self::new(2000)
     }
 }
 
@@ -142,8 +144,7 @@ impl KeyValidator for GitHubValidator {
     }
 
     fn rate_limit(&self) -> Duration {
-        // GitHub has rate limits - 2 seconds between validation requests
-        Duration::from_millis(2000)
+        Duration::from_millis(self.rate_limit_ms)
     }
 }
 
@@ -153,7 +154,7 @@ mod tests {
 
     #[test]
     fn test_github_validator_creation() {
-        let validator = GitHubValidator::new();
+        let validator = GitHubValidator::default();
         assert_eq!(validator.key_type(), "github");
     }
 }

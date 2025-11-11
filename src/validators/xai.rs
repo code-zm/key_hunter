@@ -21,17 +21,19 @@ struct XAIErrorResponse {
     _code: Option<String>,
 }
 
-pub struct XAIValidator;
+pub struct XAIValidator {
+    rate_limit_ms: u64,
+}
 
 impl XAIValidator {
-    pub fn new() -> Self {
-        Self
+    pub fn new(rate_limit_ms: u64) -> Self {
+        Self { rate_limit_ms }
     }
 }
 
 impl Default for XAIValidator {
     fn default() -> Self {
-        Self::new()
+        Self::new(1000)
     }
 }
 
@@ -154,8 +156,7 @@ impl KeyValidator for XAIValidator {
     }
 
     fn rate_limit(&self) -> Duration {
-        // xAI has rate limits - 2 seconds between validation requests
-        Duration::from_millis(2000)
+        Duration::from_millis(self.rate_limit_ms)
     }
 }
 
@@ -165,7 +166,7 @@ mod tests {
 
     #[test]
     fn test_xai_validator_creation() {
-        let validator = XAIValidator::new();
+        let validator = XAIValidator::default();
         assert_eq!(validator.key_type(), "xai");
     }
 }

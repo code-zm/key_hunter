@@ -30,17 +30,19 @@ struct ClaudeError {
     message: String,
 }
 
-pub struct ClaudeValidator;
+pub struct ClaudeValidator {
+    rate_limit_ms: u64,
+}
 
 impl ClaudeValidator {
-    pub fn new() -> Self {
-        Self
+    pub fn new(rate_limit_ms: u64) -> Self {
+        Self { rate_limit_ms }
     }
 }
 
 impl Default for ClaudeValidator {
     fn default() -> Self {
-        Self::new()
+        Self::new(2000)
     }
 }
 
@@ -164,8 +166,7 @@ impl KeyValidator for ClaudeValidator {
     }
 
     fn rate_limit(&self) -> Duration {
-        // Claude has rate limits - 2 seconds between validation requests
-        Duration::from_millis(2000)
+        Duration::from_millis(self.rate_limit_ms)
     }
 }
 
@@ -175,7 +176,7 @@ mod tests {
 
     #[test]
     fn test_claude_validator_creation() {
-        let validator = ClaudeValidator::new();
+        let validator = ClaudeValidator::default();
         assert_eq!(validator.key_type(), "claude");
     }
 }

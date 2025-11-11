@@ -17,17 +17,19 @@ struct OpenAIModel {
     id: String,
 }
 
-pub struct OpenAIValidator;
+pub struct OpenAIValidator {
+    rate_limit_ms: u64,
+}
 
 impl OpenAIValidator {
-    pub fn new() -> Self {
-        Self
+    pub fn new(rate_limit_ms: u64) -> Self {
+        Self { rate_limit_ms }
     }
 }
 
 impl Default for OpenAIValidator {
     fn default() -> Self {
-        Self::new()
+        Self::new(1000)
     }
 }
 
@@ -132,9 +134,7 @@ impl KeyValidator for OpenAIValidator {
     }
 
     fn rate_limit(&self) -> Duration {
-        // OpenAI has rate limits - 2 seconds between validation requests
-        // This helps avoid rate limit errors when validating many keys
-        Duration::from_millis(2000)
+        Duration::from_millis(self.rate_limit_ms)
     }
 }
 
@@ -144,13 +144,13 @@ mod tests {
 
     #[test]
     fn test_openai_validator_creation() {
-        let validator = OpenAIValidator::new();
+        let validator = OpenAIValidator::new(1000);
         assert_eq!(validator.key_type(), "openai");
     }
 
     #[tokio::test]
     async fn test_validate_invalid_key() {
-        let validator = OpenAIValidator::new();
+        let validator = OpenAIValidator::new(1000);
         let result = validator.validate("sk-invalidkey123456789012345678901234567890123456").await;
 
         assert!(result.is_ok());

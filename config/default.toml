@@ -9,12 +9,12 @@
 base_url = "https://api.github.com"
 
 # Rate limit delay in milliseconds between requests
-# GitHub Code Search has strict rate limits + secondary limits
-# With token: 3000ms (20 req/min) recommended to avoid rate limit errors
-# Without token: 6000ms (10 req/min)
-# Lower values = faster but WILL hit rate limits (especially with --auto-split)
-# Higher values = slower but no 60-second waits
-rate_limit_delay_ms = 3000
+# GitHub Code Search has strict rate limits
+# Default: 2000ms (30 req/min per token)
+# With multi-token rotation (5 tokens): effectively 150 req/min
+# Lower values = faster but may hit rate limits
+# Higher values = slower but more reliable
+rate_limit_delay_ms = 2000
 
 [output]
 # Default output format (json, csv, html, text)
@@ -35,23 +35,49 @@ enabled = true
 [detectors.openai]
 enabled = true
 
+[detectors.openrouter]
+enabled = true
+
 [detectors.claude]
 enabled = true
 
-[detectors.aws]
+[detectors.gemini]
 enabled = true
 
-[detectors.stripe]
+[detectors.xai]
 enabled = true
 
-[detectors.slack]
+[detectors.github]
 enabled = true
 
-[detectors.google]
-enabled = true
+# Validator rate limits (in milliseconds)
+# These control how fast we validate keys against each service's API
+# Values are conservative to avoid rate limiting errors
+[validators]
+# OpenAI API - Free tier: 3 RPM, Paid varies greatly
+# Conservative: 1000ms = 60 RPM (1 request per second)
+openai_rate_limit_ms = 1000
 
-[detectors.github_token]
-enabled = true
+# Claude/Anthropic API - Tier 1: 50 RPM, Tier 2: 1,000 RPM
+# Conservative: 2000ms = 30 RPM (matches Tier 1 limit)
+claude_rate_limit_ms = 2000
 
-[detectors.misc]
-enabled = true
+# Google Gemini API - Free: 5 RPM, Paid Tier 1: 300 RPM
+# Conservative: 2000ms = 30 RPM (safe for paid tier)
+gemini_rate_limit_ms = 2000
+
+# Shodan API - Enforced: 1 request per second across all tiers
+# Must use: 1000ms = 60 RPM (1 request per second)
+shodan_rate_limit_ms = 1000
+
+# xAI/Grok API - Default: 480 RPM (~8 RPS)
+# Conservative: 1000ms = 60 RPM (1 request per second)
+xai_rate_limit_ms = 1000
+
+# OpenRouter API - Free tier: 20 RPM, Paid: dynamic based on balance
+# Conservative: 3000ms = 20 RPM (free tier limit)
+openrouter_rate_limit_ms = 3000
+
+# GitHub API - Primary: 5,000/hour, Secondary: 900 points/minute
+# Conservative: 2000ms = 30 RPM (safe for secondary limit)
+github_rate_limit_ms = 2000

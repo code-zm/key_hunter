@@ -18,17 +18,19 @@ struct OpenRouterCreditsData {
     total_usage: f64,
 }
 
-pub struct OpenRouterValidator;
+pub struct OpenRouterValidator {
+    rate_limit_ms: u64,
+}
 
 impl OpenRouterValidator {
-    pub fn new() -> Self {
-        Self
+    pub fn new(rate_limit_ms: u64) -> Self {
+        Self { rate_limit_ms }
     }
 }
 
 impl Default for OpenRouterValidator {
     fn default() -> Self {
-        Self::new()
+        Self::new(3000)
     }
 }
 
@@ -141,8 +143,7 @@ impl KeyValidator for OpenRouterValidator {
     }
 
     fn rate_limit(&self) -> Duration {
-        // Be conservative with rate limits
-        Duration::from_millis(2000)
+        Duration::from_millis(self.rate_limit_ms)
     }
 }
 
@@ -152,7 +153,7 @@ mod tests {
 
     #[test]
     fn test_openrouter_validator_creation() {
-        let validator = OpenRouterValidator::new();
+        let validator = OpenRouterValidator::default();
         assert_eq!(validator.key_type(), "openrouter");
     }
 }

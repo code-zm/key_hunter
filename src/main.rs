@@ -246,15 +246,12 @@ async fn search_command(
     // Get the appropriate search provider
     let search_provider: Box<dyn key_hunter::SearchProvider> = match provider.as_str() {
         "github" => {
-            if let Some(github_config) = config.github {
-                Box::new(GitHubProvider::with_config(
-                    tokens,
-                    github_config.base_url,
-                    github_config.rate_limit_delay_ms,
-                ))
-            } else {
-                Box::new(GitHubProvider::new(tokens))
-            }
+            let github_config = config.github.unwrap_or_default();
+            Box::new(GitHubProvider::with_config(
+                tokens,
+                github_config.base_url,
+                github_config.rate_limit_delay_ms,
+            ))
         }
         _ => {
             return Err(key_hunter::KeyHunterError::Config(format!(
@@ -275,7 +272,8 @@ async fn search_command(
 
     // Get validators if validating immediately
     let validators = if validate {
-        Some(validators::all_validators())
+        let validators_config = config.validators.unwrap_or_default();
+        Some(validators::all_validators(&validators_config))
     } else {
         None
     };
@@ -585,6 +583,9 @@ async fn validate_command(
 ) -> key_hunter::Result<()> {
     OutputFormatter::print_info(&format!("Loading keys from {}", input));
 
+    // Load config
+    let config = load_config()?;
+
     // Load detected keys from file
     let json = fs::read_to_string(&input)?;
     let detected_keys: Vec<DetectedKey> = serde_json::from_str(&json)?;
@@ -592,7 +593,8 @@ async fn validate_command(
     println!("Loaded {} keys to validate", detected_keys.len());
 
     // Get validators
-    let validators = validators::all_validators();
+    let validators_config = config.validators.unwrap_or_default();
+    let validators = validators::all_validators(&validators_config);
 
     let mut results = HuntResults::default();
 
@@ -687,7 +689,11 @@ async fn validate_command(
 async fn test_command(key: String, key_type: String) -> key_hunter::Result<()> {
     OutputFormatter::print_info(&format!("Testing {} key...", key_type));
 
-    let validator = validators::get_validator(&key_type).ok_or_else(|| {
+    // Load config
+    let config = load_config()?;
+    let validators_config = config.validators.unwrap_or_default();
+
+    let validator = validators::get_validator(&key_type, &validators_config).ok_or_else(|| {
         key_hunter::KeyHunterError::Config(format!("Unknown key type: {}", key_type))
     })?;
 
@@ -730,7 +736,9 @@ fn list_command(what: String) -> key_hunter::Result<()> {
     match what.as_str() {
         "validators" | "all" => {
             println!("{}", "Available Validators:".bright_cyan().bold());
-            let validators = validators::all_validators();
+            let config = load_config()?;
+            let validators_config = config.validators.unwrap_or_default();
+            let validators = validators::all_validators(&validators_config);
 
             // Sort validators to match detector order
             let detector_order: Vec<String> = detectors::all_detectors()

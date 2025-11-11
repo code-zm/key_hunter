@@ -139,7 +139,7 @@ See [docs/usage.md](./docs/usage.md) for complete command reference and usage ex
 
 ## Configuration
 
-Key Hunter uses a **1000ms delay** between GitHub API requests to respect rate limits.
+Key Hunter uses a **2000ms delay** between GitHub API requests to respect rate limits.
 
 **Multi-token rotation** significantly improves performance:
 - Single token: ~30 file types/minute
