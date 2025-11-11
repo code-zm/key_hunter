@@ -1,6 +1,7 @@
 use crate::core::{KeyHunterError, Result, ValidatedKey};
 use crate::reporters::get_reporter;
 use crate::utils::HttpClient;
+use indicatif::ProgressBar;
 use serde_json::json;
 use std::collections::HashSet;
 use tracing::{info, warn};
@@ -42,12 +43,11 @@ impl GitHubIssueClient {
         let url = format!("https://api.github.com/repos/{}/issues", repo);
         let payload = json!({
             "title": title,
-            "body": body,
-            "labels": ["security", "exposed-credentials", "urgent"]
+            "body": body
         });
 
         let headers = &[
-            ("Authorization", &*format!("token {}", self.github_token)),
+            ("Authorization", &*format!("Bearer {}", self.github_token)),
             ("Accept", "application/vnd.github.v3+json"),
             ("Content-Type", "application/json"),
             ("User-Agent", "key-hunter"),
@@ -82,7 +82,11 @@ impl GitHubIssueClient {
     }
 
     /// Create issues for multiple validated keys, deduplicating by repository
-    pub async fn create_issues_bulk(&self, validated_keys: &[ValidatedKey]) -> Result<IssueCreationStats> {
+    pub async fn create_issues_bulk(
+        &self,
+        validated_keys: &[ValidatedKey],
+        progress_bar: Option<&ProgressBar>,
+    ) -> Result<IssueCreationStats> {
         let mut stats = IssueCreationStats::default();
         let mut repos_processed = HashSet::new();
 
@@ -91,10 +95,18 @@ impl GitHubIssueClient {
 
             let repo = &validated_key.detected.repository;
 
+            // Update progress message
+            if let Some(pb) = progress_bar {
+                pb.set_message(format!("Processing {}", repo));
+            }
+
             // Skip if we already processed this repo
             if repos_processed.contains(repo) {
                 info!("Skipping duplicate for {}", repo);
                 stats.skipped += 1;
+                if let Some(pb) = progress_bar {
+                    pb.inc(1);
+                }
                 continue;
             }
 
@@ -111,10 +123,19 @@ impl GitHubIssueClient {
                 }
             }
 
+            // Increment progress
+            if let Some(pb) = progress_bar {
+                pb.inc(1);
+            }
+
             // Rate limit: wait 1 second between issue creation
             if !self.dry_run {
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
+        }
+
+        if let Some(pb) = progress_bar {
+            pb.finish_with_message("Issue creation complete");
         }
 
         Ok(stats)

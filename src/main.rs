@@ -861,8 +861,36 @@ async fn report_command(
     // Create GitHub issue client
     let issue_client = key_hunter::GitHubIssueClient::new(github_token, dry_run);
 
+    // Set up progress bars
+    let report_multi = MultiProgress::new();
+
+    // Spinner for status messages
+    let spinner = report_multi.add(ProgressBar::new_spinner());
+    spinner.set_style(
+        ProgressStyle::default_spinner()
+            .template("{spinner:.green} {msg}\n")
+            .unwrap(),
+    );
+    spinner.enable_steady_tick(Duration::from_millis(100));
+    spinner.set_message("Creating GitHub issues...");
+
+    // Progress bar for issue creation
+    let progress_bar = report_multi.add(ProgressBar::new(all_validated_keys.len() as u64));
+    progress_bar.set_style(
+        ProgressStyle::default_bar()
+            .template("[{bar:40.cyan/blue}] {pos}/{len} {msg}")
+            .unwrap()
+            .progress_chars("=>-"),
+    );
+
     // Create issues
-    let stats = issue_client.create_issues_bulk(&all_validated_keys).await?;
+    let stats = issue_client
+        .create_issues_bulk(&all_validated_keys, Some(&progress_bar))
+        .await?;
+
+    // Cleanup progress bars
+    spinner.finish_and_clear();
+    progress_bar.finish_and_clear();
 
     // Print summary
     println!("\n{}", "=".repeat(80));
