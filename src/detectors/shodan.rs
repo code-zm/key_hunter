@@ -104,15 +104,6 @@ impl KeyDetector for ShodanDetector {
     fn search_queries(&self) -> Vec<String> {
         vec![
             "SHODAN_API_KEY".to_string(),
-            "shodan AND api_key extension:env".to_string(),
-            "shodan AND api_key extension:py".to_string(),
-            "shodan AND api_key extension:json".to_string(),
-            "shodan AND api_key extension:yml".to_string(),
-            "shodan AND api_key extension:sh".to_string(),
-            "shodan AND api_key extension:js".to_string(),
-            "shodan AND api_key extension:go".to_string(),
-            "Shodan(api_key".to_string(),
-            "\"api.shodan.io\" AND key".to_string(),
         ]
     }
 

@@ -118,7 +118,8 @@ impl SearchProvider for GitHubProvider {
 
         let mut all_results = Vec::new();
         let per_page = 100; // GitHub's maximum
-        let max_pages = (query.max_results / per_page).min(10); // GitHub limits to 1000 results (10 pages)
+        // Calculate max pages needed to reach max_results (use ceiling division)
+        let max_pages = ((query.max_results + per_page - 1) / per_page).min(10); // GitHub limits to 1000 results (10 pages)
 
         // First request to get total count
         let first_url = format!(

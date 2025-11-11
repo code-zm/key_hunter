@@ -5,34 +5,31 @@ use lazy_static::lazy_static;
 use regex::Regex;
 
 lazy_static! {
-    /// Stripe API Key pattern
-    static ref STRIPE_LIVE: Regex = Regex::new(r"sk_live_[0-9a-zA-Z]{24}").unwrap();
-
-    /// Stripe Restricted API Key pattern
-    static ref STRIPE_RESTRICTED: Regex = Regex::new(r"rk_live_[0-9a-zA-Z]{24}").unwrap();
+    /// OpenRouter API keys start with "sk-or-v1-" followed by 64 hex characters
+    static ref OPENROUTER_PATTERN: Regex = Regex::new(r"sk-or-v1-[a-f0-9]{64}").unwrap();
 }
 
-pub struct StripeDetector {
+pub struct OpenRouterDetector {
     patterns: Vec<Regex>,
 }
 
-impl StripeDetector {
+impl OpenRouterDetector {
     pub fn new() -> Self {
         Self {
-            patterns: vec![STRIPE_LIVE.clone(), STRIPE_RESTRICTED.clone()],
+            patterns: vec![OPENROUTER_PATTERN.clone()],
         }
     }
 }
 
-impl Default for StripeDetector {
+impl Default for OpenRouterDetector {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl KeyDetector for StripeDetector {
+impl KeyDetector for OpenRouterDetector {
     fn name(&self) -> &str {
-        "stripe"
+        "openrouter"
     }
 
     fn detect(&self, content: &str, file_path: &str) -> Vec<DetectedKey> {
@@ -46,7 +43,7 @@ impl KeyDetector for StripeDetector {
 
                 detected.push(DetectedKey {
                     key: key.to_string(),
-                    key_type: "stripe".to_string(),
+                    key_type: "openrouter".to_string(),
                     repository: String::new(),
                     file_path: file_path.to_string(),
                     file_url: String::new(),
@@ -63,18 +60,32 @@ impl KeyDetector for StripeDetector {
         &self.patterns
     }
 
-    fn search_queries(&self) -> Vec<String> {
-        vec![
-            "sk_live_".to_string(),
-            "rk_live_".to_string(),
-            "STRIPE_API_KEY".to_string(),
-            "stripe extension:env".to_string(),
-            "sk_live_ extension:py".to_string(),
-            "sk_live_ extension:js".to_string(),
-        ]
+    fn file_extensions(&self) -> &[&str] {
+        &[".env", ".py", ".js", ".json", ".yml", ".yaml", ".sh", ".go", ".rs", ".ts", ".txt"]
     }
 
-    fn file_extensions(&self) -> &[&str] {
-        &[".env", ".py", ".js", ".json", ".yaml", ".yml", ".txt", ".config"]
+    fn search_queries(&self) -> Vec<String> {
+        vec![
+            "OPENROUTER_API_KEY".to_string(),
+        ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_openrouter_detector_basic() {
+        let detector = OpenRouterDetector::new();
+        assert_eq!(detector.name(), "openrouter");
+    }
+
+    #[test]
+    fn test_search_queries() {
+        let detector = OpenRouterDetector::new();
+        let queries = detector.search_queries();
+        assert!(!queries.is_empty());
+        assert!(queries.iter().any(|q| q.contains("OPENROUTER_API_KEY")));
     }
 }

@@ -62,13 +62,8 @@ impl KeyDetector for XAIDetector {
 
     fn search_queries(&self) -> Vec<String> {
         vec![
-            "xai-".to_string(),
             "XAI_API_KEY".to_string(),
-            "x.ai".to_string(),
-            "grok".to_string(),
-            "xai- extension:env".to_string(),
-            "xai- extension:py".to_string(),
-            "xai- extension:js".to_string(),
+            "GROK_API_KEY".to_string(),
         ]
     }
 

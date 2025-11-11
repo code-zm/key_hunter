@@ -67,14 +67,6 @@ impl KeyDetector for OpenAIDetector {
     fn search_queries(&self) -> Vec<String> {
         vec![
             "OPENAI_API_KEY".to_string(),
-            "sk- AND openai".to_string(),
-            "openai AND api_key extension:env".to_string(),
-            "openai AND api_key extension:py".to_string(),
-            "openai AND api_key extension:json".to_string(),
-            "openai AND api_key extension:js".to_string(),
-            "openai AND api_key extension:ts".to_string(),
-            "\"sk-\" extension:env".to_string(),
-            "OPENAI_KEY".to_string(),
         ]
     }
 

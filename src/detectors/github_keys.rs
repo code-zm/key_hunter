@@ -47,7 +47,7 @@ impl Default for GitHubKeysDetector {
 
 impl KeyDetector for GitHubKeysDetector {
     fn name(&self) -> &str {
-        "github_token"
+        "github"
     }
 
     fn detect(&self, content: &str, file_path: &str) -> Vec<DetectedKey> {
@@ -61,7 +61,7 @@ impl KeyDetector for GitHubKeysDetector {
 
                 detected.push(DetectedKey {
                     key: key.to_string(),
-                    key_type: "github_token".to_string(),
+                    key_type: "github".to_string(),
                     repository: String::new(),
                     file_path: file_path.to_string(),
                     file_url: String::new(),
@@ -80,15 +80,7 @@ impl KeyDetector for GitHubKeysDetector {
 
     fn search_queries(&self) -> Vec<String> {
         vec![
-            "ghp_".to_string(),
-            "gho_".to_string(),
-            "ghu_".to_string(),
-            "ghs_".to_string(),
-            "ghr_".to_string(),
             "GITHUB_TOKEN".to_string(),
-            "github_token extension:env".to_string(),
-            "ghp_ extension:py".to_string(),
-            "ghp_ extension:js".to_string(),
         ]
     }
 

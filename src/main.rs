@@ -731,7 +731,24 @@ fn list_command(what: String) -> key_hunter::Result<()> {
         "validators" | "all" => {
             println!("{}", "Available Validators:".bright_cyan().bold());
             let validators = validators::all_validators();
-            for (name, _) in validators {
+
+            // Sort validators to match detector order
+            let detector_order: Vec<String> = detectors::all_detectors()
+                .iter()
+                .map(|d| d.name().to_string())
+                .collect();
+
+            let mut sorted_validators: Vec<String> = validators.keys()
+                .cloned()
+                .collect();
+
+            sorted_validators.sort_by_key(|name| {
+                detector_order.iter()
+                    .position(|d| d == name)
+                    .unwrap_or(usize::MAX)
+            });
+
+            for name in sorted_validators {
                 println!("  {} {}", "•".bright_yellow(), name.bright_white());
             }
             println!();

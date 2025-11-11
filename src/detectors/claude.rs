@@ -62,14 +62,8 @@ impl KeyDetector for ClaudeDetector {
 
     fn search_queries(&self) -> Vec<String> {
         vec![
-            "sk-ant-api03-".to_string(),
-            "CLAUDE_API_KEY".to_string(),
             "ANTHROPIC_API_KEY".to_string(),
-            "sk-ant-api03 extension:env".to_string(),
-            "sk-ant-api03 extension:py".to_string(),
-            "sk-ant-api03 extension:js".to_string(),
-            "claude api key".to_string(),
-            "anthropic api key".to_string(),
+            "CLAUDE_API_KEY".to_string(),
         ]
     }
 

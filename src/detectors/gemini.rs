@@ -63,13 +63,6 @@ impl KeyDetector for GeminiDetector {
     fn search_queries(&self) -> Vec<String> {
         vec![
             "GEMINI_API_KEY".to_string(),
-            "generativelanguage.googleapis.com".to_string(),
-            "AIza extension:env".to_string(),
-            "AIza extension:py".to_string(),
-            "AIza extension:js".to_string(),
-            "gemini-pro".to_string(),
-            "gemini-flash".to_string(),
-            "GenerativeModel".to_string(),
         ]
     }
 
