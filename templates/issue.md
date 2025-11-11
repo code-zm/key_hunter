@@ -50,4 +50,6 @@ git reflog expire --expire=now --all && git gc --prune=now --aggressive
 
 ---
 
-*This issue was created automatically by an API key scanner. Reported on {{timestamp}} UTC*
+*This issue was created automatically by [key_hunter](https://github.com/code-zm/key_hunter). Reported on {{timestamp}} UTC*
+
+*If this report helped you secure your repository, please consider giving us a ⭐ on [GitHub](https://github.com/code-zm/key_hunter)!*
