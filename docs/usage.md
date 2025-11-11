@@ -100,6 +100,20 @@ key-hunter test "sk-ant-..." --key-type claude
 
 Create GitHub issues for exposed keys.
 
+**⚠️ CRITICAL WARNING:**
+
+This command creates issues on GitHub repositories. **ONLY** use this on:
+- Repositories you own
+- Repositories where you're an authorized collaborator
+- After obtaining explicit permission
+
+**Creating issues on repositories you don't own may:**
+- Violate GitHub's Terms of Service (Section H - API Abuse)
+- Result in account suspension or permanent termination
+- Be automatically flagged as spam/abuse
+
+**For external repositories:** Contact owners via email, private security advisories, or create issues manually with proper context.
+
 ```bash
 key-hunter report [OPTIONS]
 
@@ -111,23 +125,26 @@ Options:
 
 **How it works:**
 - Reads all JSON files in `results/` directory
-- Deduplicates by repository (multiple keys = one issue per repo)
+- Groups multiple keys per repository into a single issue
 - Uses service-specific templates for each key type
-- Creates issues with "security", "exposed-credentials", "urgent" labels
+- Checks for existing issues before creating duplicates
 
-**Important:** Report processes ALL JSON files in the results directory. If you've already reported keys, either:
-- Move processed files to an archive directory, or
-- Use `--dry-run` to preview before creating issues
+**Important:** Report processes ALL JSON files in the results directory. If you've already reported keys:
+- Move processed files to an archive directory
+- Always use `--dry-run` first to preview
 
-**Examples:**
+**Examples (Own Repositories Only):**
 ```bash
-# Preview issues without creating them
+# STEP 1: Search only YOUR repositories
+key-hunter search --owner YOUR_USERNAME --key-type all --validate
+
+# STEP 2: Preview issues (always do this first!)
 key-hunter report --dry-run
 
-# Create issues for all validated keys
+# STEP 3: Create issues only after previewing
 key-hunter report
 
-# Only report Shodan keys
+# Only report specific key type
 key-hunter report --key-type shodan
 
 # Report from different directory
@@ -221,22 +238,25 @@ Each results file contains:
 Create a `.env` file in the project root:
 
 ```bash
-# GitHub tokens for searching (1-5 tokens, auto-rotates when rate limited)
-GITHUB_TOKEN1=ghp_your_first_token
-GITHUB_TOKEN2=ghp_your_second_token  # Optional
-GITHUB_TOKEN3=ghp_your_third_token   # Optional
-GITHUB_TOKEN4=ghp_your_fourth_token  # Optional
-GITHUB_TOKEN5=ghp_your_fifth_token   # Optional
+# GitHub token for searching (required)
+GITHUB_TOKEN1=ghp_your_token_here
 
-# GitHub token for creating issues (separate account recommended)
-ISSUES_GITHUB_TOKEN=ghp_issues_token
+# GitHub token for creating issues (optional)
+# ⚠️  WARNING: Only use on repositories you own or have permission to modify
+ISSUES_GITHUB_TOKEN=ghp_your_token_here
 ```
 
-**Multi-token benefits:**
-- Single token: ~30 file types/minute
-- 5 tokens: ~150 file types/minute (5x throughput)
-- Automatic rotation when rate limits are hit
-- No manual intervention required
+**⚠️ Important - GitHub Terms of Service:**
+
+GitHub's ToS (Section B.3) states: *"One person or legal entity may maintain no more than one free Account"*
+
+- **DO NOT** create multiple Personal Accounts to bypass rate limits
+- **DO NOT** use tokens from different accounts for multi-token rotation
+- Violating this may result in account suspension or termination
+
+**Rate Limits:**
+- Searches are limited to ~30 requests/minute per authenticated token
+- Be patient with searches - quality over speed
 
 ### Rate Limiting
 

@@ -1,26 +1,22 @@
-## Security Alert: Exposed API Key Detected
+## Security Alert: Exposed API Key{{key_count_plural}} Detected
 
-An automated security scan has detected a **valid {{service_name}} API key** that is publicly exposed in this repository.
+An automated security scan has detected **{{key_count}} valid {{service_name}} API key{{key_count_plural}}** that {{key_count_verb}} publicly exposed in this repository.
 
 ### Details
 
-- **Service**: {{service_name}}
-- **File**: `{{file_path}}`
-- **Line Number**: {{line_number}}
-- **File URL**: {{file_url}}
-- **Key Preview**: `{{key_partial}}` (truncated for security)
+{{keys_details}}
 
 ### Validation Results
 
-This key was **validated as active** against the {{service_name}} API:
+{{key_count_these}} key{{key_count_plural}} {{key_count_verb_past}} **validated as active** against the {{service_name}} API:
 
 {{metadata_section}}
 
 ### Immediate Actions Required
 
-1. **REVOKE THIS KEY IMMEDIATELY** at {{revoke_url}}
-2. **Generate a new API key** with appropriate permissions
-3. **Remove the key from this file** and all git history
+1. **REVOKE {{key_count_these_upper}} KEY{{key_count_plural_upper}} IMMEDIATELY** at {{revoke_url}}
+2. **Generate new API key{{key_count_plural}}** with appropriate permissions
+3. **Remove {{key_count_the}} key{{key_count_plural}} from {{key_count_these}} file{{key_count_plural}}** and all git history
 4. **Use environment variables or secret management** instead of hardcoding keys
 5. **Rotate any other credentials** that may have been exposed{{additional_actions}}
 
@@ -29,10 +25,10 @@ This key was **validated as active** against the {{service_name}} API:
 **Remove from Git History:**
 ```bash
 # Using git-filter-repo (recommended)
-git filter-repo --path {{file_path}} --invert-paths
+{{file_cleanup_commands}}
 
-# Or using BFG Repo-Cleaner
-bfg --delete-files {{file_path}}
+# Or clean entire history with BFG Repo-Cleaner
+bfg --delete-files "*.env"
 git reflog expire --expire=now --all && git gc --prune=now --aggressive
 ```
 

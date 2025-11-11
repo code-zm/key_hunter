@@ -37,11 +37,11 @@ This tool is designed **exclusively** for:
 
 ## Features
 
-- **Multi-Token Rotation** - Use up to 5 GitHub tokens with automatic rotation to avoid rate limits
 - **Smart Detection** - Regex patterns with entropy filtering to reduce false positives
 - **Live Validation** - Verifies keys against actual APIs in real-time
-- **Auto-Reporting** - Automatically creates GitHub issues for exposed keys
+- **Responsible Reporting** - Creates GitHub issues for exposed keys (use only on your own repositories)
 - **Organized Output** - Results saved by key type with timestamps
+- **Configurable Rate Limits** - Adjust validation speed based on your API tier
 
 ---
 
@@ -94,13 +94,18 @@ Binary will be located at `target/release/key-hunter`
 Create a `.env` file:
 
 ```bash
-# GitHub tokens for searching (1-5 tokens, auto-rotates when rate limited)
-GITHUB_TOKEN1=ghp_your_first_token
-GITHUB_TOKEN2=ghp_your_second_token  # Optional
+# GitHub token for searching (required)
+# Create at: https://github.com/settings/tokens
+# Required scope: public_repo (read-only)
+GITHUB_TOKEN1=ghp_your_token_here
 
-# GitHub token for creating issues
-ISSUES_GITHUB_TOKEN=ghp_issues_token
+# GitHub token for creating issues (optional)
+# ⚠️  WARNING: Only use on repositories you own or have permission to modify
+# Creating issues on repositories you don't own may violate GitHub ToS
+ISSUES_GITHUB_TOKEN=ghp_your_token_here
 ```
+
+**Important:** GitHub's Terms of Service prohibit creating multiple Personal Accounts. Do not create additional accounts to bypass rate limits. Searches are rate-limited to ~30 requests/minute per token.
 
 ### 2. Search and Validate
 
@@ -112,14 +117,23 @@ ISSUES_GITHUB_TOKEN=ghp_issues_token
 ./target/release/key-hunter search --key-type all --validate
 ```
 
-### 3. Create Issues
+### 3. Create Issues (Own Repositories Only)
+
+**⚠️ CRITICAL WARNING:** The `report` command creates issues on GitHub repositories. This feature should **ONLY** be used on:
+- Repositories you own
+- Repositories where you're an authorized collaborator
+- After obtaining explicit permission from repository owners
+
+Creating issues on repositories you don't own may:
+- Violate GitHub's Terms of Service
+- Result in account suspension or termination
+- Be flagged as spam/abuse by GitHub
 
 ```bash
-# Preview what issues would be created
-./target/release/key-hunter report --dry-run
-
-# Create GitHub issues for exposed keys
-./target/release/key-hunter report
+# ONLY use on your own repositories:
+./target/release/key-hunter search --owner YOUR_USERNAME --validate
+./target/release/key-hunter report --dry-run  # Preview first
+./target/release/key-hunter report  # Only if previewed and confirmed
 ```
 
 ---
@@ -150,9 +164,9 @@ See [docs/usage.md](./docs/usage.md) for complete command reference and usage ex
 
 Rate limits can be customized in `config/default.toml` under the `[validators]` section.
 
-**Multi-token rotation** significantly improves search performance:
-- Single token: ~30 file types/minute
-- 5 tokens: ~150 file types/minute (5x throughput)
+**GitHub Search Rate Limits:**
+- Authenticated: 30 requests/minute per token
+- Unauthenticated: 10 requests/minute per IP
 
 See [docs/usage.md](./docs/usage.md) for complete configuration details.
 
@@ -180,8 +194,26 @@ If you discover exposed keys:
 1. **Immediately report** to repository owner
 2. **Do NOT** use the keys for any purpose
 3. **Do NOT** publicly disclose until owner has time to respond
+4. **Only use `report` command on your own repositories**
 
-Key Hunter's `report` command automates step 1 by creating an issue in the repo the key was discovered from.
+### Reporting Keys in External Repositories
+
+**DO NOT** use the automated `report` command on repositories you don't own. This may violate GitHub's Terms of Service and result in account suspension.
+
+Instead, for external repositories:
+- Use GitHub's private security advisory feature if available
+- Contact repository maintainers via email (check SECURITY.md or README)
+- Create a single issue manually with proper context
+- Report through bug bounty platforms if applicable
+
+### Using the Report Command Safely
+
+The `report` command should **only** be used for:
+- Your own repositories
+- Repositories where you're an authorized collaborator
+- Internal organization security audits (with permission)
+
+Always use `--dry-run` first to preview what would be created.
 
 ---
 
