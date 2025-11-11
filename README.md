@@ -7,7 +7,7 @@
 **Fast, modular framework for hunting exposed API keys in code repositories**
 
 [![Rust](https://img.shields.io/badge/Rust-1.70%2B-orange?logo=rust)](https://www.rust-lang.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![License: GPL 3.0](https://img.shields.io/badge/License-GPL%203.0-blue.svg)](./LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)]()
 [![Status](https://img.shields.io/badge/status-active-brightgreen)]()
 [![GitHub Issues](https://img.shields.io/github/issues/code-zm/key_hunter)](https://github.com/code-zm/key_hunter/issues)
@@ -19,36 +19,37 @@
 
 ---
 
-## ⚠️ Ethical Use Only
+## Ethical Use Only
 
 This tool is designed **exclusively** for:
-- 🔒 Security research and vulnerability disclosure
-- 📚 Educational purposes
-- ✅ Authorized security testing with explicit permission
+- Security research and vulnerability disclosure
+- Educational purposes
+- Authorized security testing with explicit permission
 
 **Strictly prohibited:**
-- ❌ Unauthorized access to systems or data
-- ❌ Exploiting discovered credentials
-- ❌ Any malicious or illegal activities
+- Unauthorized access to systems or data
+- Exploiting discovered credentials
+- Any malicious or illegal activities
 
 **By using this tool, you agree to responsibly disclose all findings to repository owners.**
 
 ---
 
-## ✨ Features
+## Features
 
-- **🔄 Multi-Token Rotation** - Use up to 5 GitHub tokens with automatic rotation to avoid rate limits
-- **🎯 Smart Detection** - Regex patterns with entropy filtering to reduce false positives
-- **✅ Live Validation** - Verifies keys against actual APIs in real-time
-- **🤖 Auto-Reporting** - Automatically creates GitHub issues for exposed keys
-- **📁 Organized Output** - Results saved by key type with timestamps
+- **Multi-Token Rotation** - Use up to 5 GitHub tokens with automatic rotation to avoid rate limits
+- **Smart Detection** - Regex patterns with entropy filtering to reduce false positives
+- **Live Validation** - Verifies keys against actual APIs in real-time
+- **Auto-Reporting** - Automatically creates GitHub issues for exposed keys
+- **Organized Output** - Results saved by key type with timestamps
 
 ---
 
-## 🔑 Supported Services
+## Supported Services
 
 - **Shodan**
 - **OpenAI**
+- **OpenRouter**
 - **Claude (Anthropic)**
 - **Gemini**
 - **GitHub**
@@ -56,7 +57,7 @@ This tool is designed **exclusively** for:
 
 ---
 
-## 📦 Installation
+## Installation
 
 ### Prerequisites
 
@@ -86,7 +87,7 @@ Binary will be located at `target/release/key-hunter`
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Configure Tokens
 
@@ -123,7 +124,7 @@ ISSUES_GITHUB_TOKEN=ghp_issues_token
 
 ---
 
-## 📖 Documentation
+## Documentation
 
 See [docs/usage.md](./docs/usage.md) for complete command reference and usage examples.
 
@@ -136,7 +137,7 @@ See [docs/usage.md](./docs/usage.md) for complete command reference and usage ex
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 Key Hunter uses a **1000ms delay** between GitHub API requests to respect rate limits.
 
@@ -150,7 +151,7 @@ See [docs/usage.md](./docs/usage.md) for complete configuration details.
 
 ---
 
-## 📂 Output
+## Output
 
 Results are automatically organized:
 
@@ -165,7 +166,7 @@ results/
 
 ---
 
-## 🤝 Responsible Disclosure
+## Responsible Disclosure
 
 If you discover exposed keys:
 
@@ -177,13 +178,13 @@ Key Hunter's `report` command automates step 1 by creating an issue in the repo 
 
 ---
 
-## 📄 License
+## License
 
 GPL 3.0 License - See [LICENSE](LICENSE) file for details
 
 ---
 
-## 🙏 Credits
+## Credits
 
 Built with:
 - [Tokio](https://tokio.rs/) - Async runtime
@@ -194,7 +195,7 @@ Built with:
 
 ---
 
-## ⚖️ Disclaimer
+## Disclaimer
 
 **This tool is provided for educational and authorized security research purposes only.**
 
