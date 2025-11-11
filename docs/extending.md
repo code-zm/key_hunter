@@ -139,11 +139,19 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::time::Duration;
 
-pub struct MyServiceValidator;
+pub struct MyServiceValidator {
+    rate_limit_ms: u64,
+}
 
 impl MyServiceValidator {
-    pub fn new() -> Self {
-        Self
+    pub fn new(rate_limit_ms: u64) -> Self {
+        Self { rate_limit_ms }
+    }
+}
+
+impl Default for MyServiceValidator {
+    fn default() -> Self {
+        Self::new(1000) // 1 second default
     }
 }
 
@@ -204,8 +212,8 @@ impl KeyValidator for MyServiceValidator {
     }
 
     fn rate_limit(&self) -> Duration {
-        // Delay between validation requests
-        Duration::from_millis(1000)
+        // Delay between validation requests (configurable)
+        Duration::from_millis(self.rate_limit_ms)
     }
 }
 ```
@@ -244,15 +252,54 @@ mod myservice;
 
 pub use myservice::MyServiceValidator;
 
-pub fn all_validators() -> HashMap<String, Box<dyn KeyValidator>> {
+pub fn all_validators(config: &ValidatorsConfig) -> HashMap<String, Box<dyn KeyValidator>> {
     let mut validators = HashMap::new();
     // ... existing validators
     validators.insert(
         "myservice".to_string(),
-        Box::new(MyServiceValidator::new()) as Box<dyn KeyValidator>
+        Box::new(MyServiceValidator::new(config.myservice_rate_limit_ms)) as Box<dyn KeyValidator>
     );
     validators
 }
+
+pub fn get_validator(key_type: &str, config: &ValidatorsConfig) -> Option<Box<dyn KeyValidator>> {
+    match key_type.to_lowercase().as_str() {
+        // ... existing cases
+        "myservice" => Some(Box::new(MyServiceValidator::new(config.myservice_rate_limit_ms))),
+        _ => None,
+    }
+}
+```
+
+### Step 4b: Add to ValidatorsConfig
+
+In `src/core/config.rs`, add your service's rate limit to the `ValidatorsConfig` struct:
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidatorsConfig {
+    // ... existing fields
+    pub myservice_rate_limit_ms: u64,
+}
+
+impl Default for ValidatorsConfig {
+    fn default() -> Self {
+        Self {
+            // ... existing defaults
+            myservice_rate_limit_ms: 1000,  // 60 RPM default
+        }
+    }
+}
+```
+
+### Step 4c: Add to config/default.toml
+
+Add your service's rate limit configuration:
+
+```toml
+[validators]
+# ... existing validators
+myservice_rate_limit_ms = 1000  # 60 RPM - adjust based on API limits
 ```
 
 ### Step 5: Add Issue Template Configuration (Optional)
@@ -328,7 +375,7 @@ r"[A-Za-z0-9]{32}"
 
 ### 2. Validation
 
-- **Handle rate limits** - Implement appropriate delays
+- **Handle rate limits** - Accept `rate_limit_ms` parameter and use it in `rate_limit()` method
 - **Parse errors carefully** - Don't confuse network errors with invalid keys
 - **Extract metadata** - Return useful info (plan type, credits, etc.)
 - **Test edge cases** - Expired keys, revoked keys, malformed keys

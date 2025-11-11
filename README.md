@@ -139,13 +139,20 @@ See [docs/usage.md](./docs/usage.md) for complete command reference and usage ex
 
 ## Configuration
 
-Key Hunter uses a **2000ms delay** between GitHub API requests to respect rate limits.
+**Rate Limits:** Each validator has configurable rate limits based on API restrictions:
+- OpenAI: 1000ms (60 RPM)
+- Claude: 2000ms (30 RPM)
+- Gemini: 2000ms (30 RPM)
+- Shodan: 1000ms (60 RPM)
+- xAI: 1000ms (60 RPM)
+- OpenRouter: 3000ms (20 RPM)
+- GitHub: 2000ms (30 RPM)
 
-**Multi-token rotation** significantly improves performance:
+Rate limits can be customized in `config/default.toml` under the `[validators]` section.
+
+**Multi-token rotation** significantly improves search performance:
 - Single token: ~30 file types/minute
 - 5 tokens: ~150 file types/minute (5x throughput)
-
-Optional configuration file: `config/default.toml`
 
 See [docs/usage.md](./docs/usage.md) for complete configuration details.
 

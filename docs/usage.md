@@ -240,15 +240,28 @@ ISSUES_GITHUB_TOKEN=ghp_issues_token
 
 ### Rate Limiting
 
-GitHub Code Search API has strict rate limits:
+**GitHub Code Search API:**
 - **Authenticated:** 30 requests/minute per token
 - **Unauthenticated:** 10 requests/minute per IP
+- **Key Hunter delay:** 1000ms between GitHub search requests
 
-Key Hunter uses a **1000ms delay** between requests. This is configured in the code and should not be lowered to avoid constant rate limit errors.
+**Validator Rate Limits (Configurable):**
+
+Each API validator has configurable rate limits based on their API restrictions:
+
+| Service | Default | RPM | Notes |
+|---------|---------|-----|-------|
+| OpenAI | 1000ms | 60 | Conservative for free tier |
+| Claude | 2000ms | 30 | Matches Tier 1 limit |
+| Gemini | 2000ms | 30 | Safe for paid tier |
+| Shodan | 1000ms | 60 | Enforced 1 req/sec |
+| xAI | 1000ms | 60 | Conservative default |
+| OpenRouter | 3000ms | 20 | Free tier limit |
+| GitHub | 2000ms | 30 | Secondary rate limit safe |
 
 ### Configuration File (Optional)
 
-Create `config/default.toml`:
+Create `config/default.toml` to customize validator rate limits and other settings:
 
 ```toml
 [github]
@@ -258,7 +271,22 @@ rate_limit_delay_ms = 1000
 [output]
 format = "json"
 directory = "./results"
+
+# Validator rate limits (in milliseconds)
+[validators]
+openai_rate_limit_ms = 1000      # 60 RPM - conservative for free tier
+claude_rate_limit_ms = 2000      # 30 RPM - matches Tier 1 limit
+gemini_rate_limit_ms = 2000      # 30 RPM - safe for paid tier
+shodan_rate_limit_ms = 1000      # 60 RPM - enforced 1 req/sec
+xai_rate_limit_ms = 1000         # 60 RPM - conservative default
+openrouter_rate_limit_ms = 3000  # 20 RPM - free tier limit
+github_rate_limit_ms = 2000      # 30 RPM - secondary rate limit safe
 ```
+
+**Customizing rate limits:**
+- Increase values if you have higher tier API access
+- Never lower below defaults unless you have confirmed higher limits
+- Values are in milliseconds (1000ms = 1 second = 60 RPM)
 
 ---
 
@@ -329,5 +357,5 @@ key-hunter report            # Create issues
 - **Always dry-run reports first** - Use `--dry-run` to preview before creating issues
 - **Archive processed results** - Move reported files to prevent duplicate reports
 - **Use separate tokens** - Different GitHub account for `ISSUES_GITHUB_TOKEN`
-- **Respect rate limits** - Don't modify the 1000ms delay
+- **Respect rate limits** - Only adjust validator rate limits if you have confirmed higher API tier limits
 - **Test single keys** - Use `test` command to debug validation issues
