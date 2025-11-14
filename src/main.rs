@@ -215,6 +215,46 @@ fn generate_extension_qualifiers() -> Vec<String> {
     ]
 }
 
+/// Enrich a detected key with email information from GitHub
+async fn enrich_with_emails(
+    detected_key: &mut DetectedKey,
+    github_provider: &GitHubProvider,
+) -> key_hunter::Result<()> {
+    // Fetch commit author email and SHA
+    let branch = detected_key.file_url
+        .split("/blob/")
+        .nth(1)
+        .and_then(|s| s.split('/').next());
+
+    match github_provider.get_file_commit_author_email(
+        &detected_key.repository,
+        &detected_key.file_path,
+        branch,
+    ).await {
+        Ok((email, sha)) => {
+            detected_key.commit_author_email = email;
+            detected_key.commit_sha = sha;
+        }
+        Err(e) => {
+            warn!("Failed to fetch commit info for {}/{}: {}",
+                  detected_key.repository, detected_key.file_path, e);
+        }
+    }
+
+    // Fetch repository owner email
+    match github_provider.get_repo_owner_email(&detected_key.repository).await {
+        Ok(email) => {
+            detected_key.repo_owner_email = email;
+        }
+        Err(e) => {
+            warn!("Failed to fetch repo owner email for {}: {}",
+                  detected_key.repository, e);
+        }
+    }
+
+    Ok(())
+}
+
 async fn search_command(
     provider: String,
     key_type: String,
@@ -242,6 +282,18 @@ async fn search_command(
     } else {
         warn!("No GitHub tokens found (GITHUB_TOKEN1-5). Running unauthenticated with severe rate limits.");
     }
+
+    // Create a dedicated GitHub provider for fetching emails (only if provider is github)
+    let email_provider = if provider == "github" && !tokens.is_empty() {
+        let github_config = config.github.clone().unwrap_or_default();
+        Some(GitHubProvider::with_config(
+            tokens.clone(),
+            github_config.base_url.clone(),
+            github_config.rate_limit_delay_ms,
+        ))
+    } else {
+        None
+    };
 
     // Get the appropriate search provider
     let search_provider: Box<dyn key_hunter::SearchProvider> = match provider.as_str() {
@@ -463,6 +515,9 @@ async fn search_command(
                 for key in &mut detected_keys {
                     key.repository = search_result.repository.clone();
                     key.file_url = search_result.file_url.clone();
+                    key.repo_owner_email = None;
+                    key.commit_author_email = None;
+                    key.commit_sha = None;
                 }
 
                 // Process detected keys
@@ -501,8 +556,19 @@ async fn search_command(
 
                             match validator.validate(&detected_key.key).await {
                                 Ok(validation) => {
+                                    let mut enriched_key = detected_key.clone();
+
+                                    // Enrich valid keys with email information
+                                    if validation.valid {
+                                        if let Some(ref email_prov) = email_provider {
+                                            if let Err(e) = enrich_with_emails(&mut enriched_key, email_prov).await {
+                                                warn!("Failed to enrich key with emails: {}", e);
+                                            }
+                                        }
+                                    }
+
                                     let validated = ValidatedKey {
-                                        detected: detected_key.clone(),
+                                        detected: enriched_key,
                                         validation: validation.clone(),
                                         validated_at: Utc::now(),
                                     };
@@ -767,20 +833,143 @@ fn list_command(what: String) -> key_hunter::Result<()> {
     Ok(())
 }
 
+/// Render email preview for dry-run mode (mirrors EmailClient logic)
+fn render_email_preview(keys: &[ValidatedKey], repository: &str) -> key_hunter::Result<String> {
+    use key_hunter::reporters::TemplateRenderer;
+
+    let template = TemplateRenderer::load("issue")?;
+    let key_count = keys.len();
+    let key_type = &keys[0].detected.key_type;
+
+    // Build variables for template
+    let mut vars = std::collections::HashMap::new();
+    vars.insert("repository".to_string(), repository.to_string());
+    vars.insert("key_count".to_string(), key_count.to_string());
+    vars.insert(
+        "key_count_plural".to_string(),
+        if key_count > 1 { "s" } else { "" }.to_string(),
+    );
+    vars.insert(
+        "key_count_plural_upper".to_string(),
+        if key_count > 1 { "S" } else { "" }.to_string(),
+    );
+    vars.insert(
+        "key_count_verb".to_string(),
+        if key_count > 1 { "are" } else { "is" }.to_string(),
+    );
+    vars.insert(
+        "key_count_verb_past".to_string(),
+        if key_count > 1 { "were" } else { "was" }.to_string(),
+    );
+    vars.insert(
+        "key_count_these".to_string(),
+        if key_count > 1 { "these" } else { "this" }.to_string(),
+    );
+    vars.insert(
+        "key_count_these_upper".to_string(),
+        if key_count > 1 { "THESE" } else { "THIS" }.to_string(),
+    );
+    vars.insert(
+        "key_count_the".to_string(),
+        if key_count > 1 { "the" } else { "the" }.to_string(),
+    );
+
+    // Service-specific configuration
+    let service_config = key_hunter::reporters::ServiceConfig::get(key_type);
+    vars.insert("service_name".to_string(), service_config.service_name);
+    vars.insert("revoke_url".to_string(), service_config.revoke_url);
+    vars.insert(
+        "additional_actions".to_string(),
+        service_config.additional_actions,
+    );
+    vars.insert("best_practices".to_string(), service_config.best_practices);
+    vars.insert("resources".to_string(), service_config.resources);
+
+    // Build keys details section
+    let mut keys_details = Vec::new();
+    let mut metadata_sections = Vec::new();
+    let mut file_cleanup_commands = Vec::new();
+
+    for (idx, validated_key) in keys.iter().enumerate() {
+        let detected = &validated_key.detected;
+
+        // Key details
+        let key_preview = if detected.key.len() > 20 {
+            format!("{}...", &detected.key[..20])
+        } else {
+            detected.key.clone()
+        };
+
+        keys_details.push(format!(
+            "**Key {}:**\n- File: `{}`\n- Line: {}\n- URL: {}\n- Key: `{}`\n- Commit: {}",
+            idx + 1,
+            detected.file_path,
+            detected
+                .line_number
+                .map(|n| n.to_string())
+                .unwrap_or_else(|| "N/A".to_string()),
+            detected.file_url,
+            key_preview,
+            detected
+                .commit_sha
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string())
+        ));
+
+        // Metadata
+        let mut metadata_lines = Vec::new();
+        for (key, value) in &validated_key.validation.metadata {
+            let formatted_key = key
+                .split('_')
+                .map(|word| {
+                    let mut chars = word.chars();
+                    match chars.next() {
+                        None => String::new(),
+                        Some(first) => first.to_uppercase().chain(chars).collect(),
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+
+            metadata_lines.push(format!("- **{}**: {}", formatted_key, value));
+        }
+        metadata_sections.push(metadata_lines.join("\n"));
+
+        // Cleanup command
+        file_cleanup_commands.push(format!(
+            "git filter-repo --path {} --invert-paths",
+            detected.file_path
+        ));
+    }
+
+    vars.insert("keys_details".to_string(), keys_details.join("\n\n"));
+    vars.insert(
+        "metadata_section".to_string(),
+        metadata_sections.join("\n\n"),
+    );
+    vars.insert(
+        "file_cleanup_commands".to_string(),
+        file_cleanup_commands.join("\n"),
+    );
+
+    vars.insert(
+        "timestamp".to_string(),
+        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+    );
+
+    Ok(template.render(&vars))
+}
+
 async fn report_command(
     results_dir: String,
     key_type_filter: String,
     dry_run: bool,
 ) -> key_hunter::Result<()> {
-    // Load GitHub token from environment
-    let github_token = std::env::var("ISSUES_GITHUB_TOKEN").map_err(|_| {
-        key_hunter::KeyHunterError::Config(
-            "ISSUES_GITHUB_TOKEN environment variable not set. Please set it in your .env file.".to_string()
-        )
-    })?;
+    // Load SMTP configuration from environment
+    let smtp_config = key_hunter::reporters::SmtpConfig::from_env()?;
 
     if dry_run {
-        OutputFormatter::print_info("Running in DRY RUN mode - no issues will be created\n");
+        OutputFormatter::print_info("Running in DRY RUN mode - no emails will be sent\n");
     }
 
     OutputFormatter::print_info(&format!("Reading results from {}\n", results_dir));
@@ -858,63 +1047,128 @@ async fn report_command(
         all_validated_keys.len()
     );
 
-    // Create GitHub issue client
-    let issue_client = key_hunter::GitHubIssueClient::new(github_token, dry_run);
+    // Group keys by recipient email to show how many emails will be sent
+    let mut recipients = std::collections::HashSet::new();
+    let mut keys_without_email = 0;
 
-    // Set up progress bars
-    let report_multi = MultiProgress::new();
+    for key in &all_validated_keys {
+        let email = key
+            .detected
+            .commit_author_email
+            .as_ref()
+            .or(key.detected.repo_owner_email.as_ref());
 
-    // Spinner for status messages
-    let spinner = report_multi.add(ProgressBar::new_spinner());
-    spinner.set_style(
-        ProgressStyle::default_spinner()
-            .template("{spinner:.green} {msg}\n")
-            .unwrap(),
-    );
-    spinner.enable_steady_tick(Duration::from_millis(100));
-    spinner.set_message("Creating GitHub issues...");
-
-    // Progress bar for issue creation
-    let progress_bar = report_multi.add(ProgressBar::new(all_validated_keys.len() as u64));
-    progress_bar.set_style(
-        ProgressStyle::default_bar()
-            .template("[{bar:40.cyan/blue}] {pos}/{len} {msg}")
-            .unwrap()
-            .progress_chars("=>-"),
-    );
-
-    // Create issues
-    let stats = issue_client
-        .create_issues_bulk(&all_validated_keys, Some(&progress_bar))
-        .await?;
-
-    // Cleanup progress bars
-    spinner.finish_and_clear();
-    progress_bar.finish_and_clear();
-
-    // Print summary
-    println!("\n{}", "=".repeat(80));
-    println!("Summary:");
-    println!("   Total keys: {}", stats.total);
-    println!("   Issues created: {}", stats.success);
-    println!("   Failed: {}", stats.failed);
-    println!("   Skipped: {}", stats.skipped);
-
-    if !stats.errors.is_empty() {
-        println!("\nErrors:");
-        for error in &stats.errors {
-            println!("   {}", error);
+        if let Some(email_addr) = email {
+            recipients.insert(email_addr.clone());
+        } else {
+            keys_without_email += 1;
         }
     }
 
-    if !dry_run && !stats.issue_urls.is_empty() {
-        println!("\nCreated issues:");
-        for url in &stats.issue_urls {
-            println!("   {}", url);
-        }
+    println!(
+        "Will send {} email(s) to {} unique recipient(s)",
+        all_validated_keys.len() - keys_without_email,
+        recipients.len()
+    );
+
+    if keys_without_email > 0 {
+        warn!(
+            "{} key(s) have no email address and will be skipped",
+            keys_without_email
+        );
     }
 
-    println!("{}", "=".repeat(80));
+    if dry_run {
+        println!("\n{}", "=".repeat(80).bright_yellow());
+        println!("{}", "DRY RUN MODE - Example Emails".bright_yellow().bold());
+        println!("{}", "=".repeat(80).bright_yellow());
+
+        // Group keys by recipient email (same as EmailClient does)
+        let mut by_email: std::collections::HashMap<String, Vec<ValidatedKey>> = std::collections::HashMap::new();
+
+        for key in &all_validated_keys {
+            let email = key
+                .detected
+                .commit_author_email
+                .as_ref()
+                .or(key.detected.repo_owner_email.as_ref());
+
+            if let Some(email_addr) = email {
+                by_email
+                    .entry(email_addr.clone())
+                    .or_insert_with(Vec::new)
+                    .push(key.clone());
+            }
+        }
+
+        for (idx, (recipient_email, keys)) in by_email.iter().enumerate() {
+            let repository = &keys[0].detected.repository;
+            let key_type = &keys[0].detected.key_type;
+            let key_count = keys.len();
+
+            println!("\n{} Email #{} {}", "─".repeat(25), idx + 1, "─".repeat(25));
+            println!("{}: {}", "To".bright_cyan(), recipient_email.bright_white());
+            println!("{}: {}", "Subject".bright_cyan(),
+                if key_count == 1 {
+                    format!("[Security Alert] Exposed {} API Key in {}", key_type.to_uppercase(), repository)
+                } else {
+                    format!("[Security Alert] {} Exposed API Keys in {}", key_count, repository)
+                }.bright_white()
+            );
+            println!("{}", "─".repeat(60));
+
+            // Render email body (reuse the template rendering logic)
+            match render_email_preview(&keys, repository) {
+                Ok(preview) => {
+                    // Show first 30 lines of email body
+                    let lines: Vec<&str> = preview.lines().collect();
+                    for line in lines.iter().take(30) {
+                        println!("{}", line);
+                    }
+                    if lines.len() > 30 {
+                        println!("\n   {} [{} more lines...]", "...".bright_black(), lines.len() - 30);
+                    }
+                }
+                Err(e) => {
+                    println!("Error rendering email preview: {}", e);
+                }
+            }
+            println!("{}", "─".repeat(60));
+        }
+
+        println!("\n{}", "=".repeat(80).bright_yellow());
+        println!("{}", "Summary:".bright_yellow());
+        println!("   {} emails would be sent to {} recipients",
+                 all_validated_keys.len() - keys_without_email, recipients.len());
+        println!("{}", "=".repeat(80).bright_yellow());
+        println!("\n{}", "No emails were sent (dry run mode)".bright_green());
+
+        return Ok(());
+    }
+
+    // Create email client
+    let email_client = key_hunter::reporters::EmailClient::new(smtp_config)?;
+
+    // Set up progress
+    OutputFormatter::print_info("Sending email notifications...\n");
+
+    // Send bulk notifications
+    match email_client.send_bulk_notifications(&all_validated_keys) {
+        Ok(_) => {
+            println!("\n{}", "=".repeat(80));
+            println!("Summary:");
+            println!("   Total keys: {}", all_validated_keys.len());
+            println!("   Emails sent: {}", recipients.len());
+            println!("   Keys without email: {}", keys_without_email);
+            println!("{}", "=".repeat(80));
+            OutputFormatter::print_success("All email notifications sent successfully!");
+        }
+        Err(e) => {
+            println!("\n{}", "=".repeat(80));
+            OutputFormatter::print_error(&format!("Failed to send some emails: {}", e));
+            println!("{}", "=".repeat(80));
+        }
+    }
 
     Ok(())
 }

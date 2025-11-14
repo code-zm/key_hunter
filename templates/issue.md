@@ -1,6 +1,10 @@
-## Security Alert: Exposed API Key{{key_count_plural}} Detected
+## 🔐 Security Alert: Exposed API Key{{key_count_plural}} Detected
 
-An automated security scan has detected **{{key_count}} valid {{service_name}} API key{{key_count_plural}}** that {{key_count_verb}} publicly exposed in this repository.
+Hello,
+
+An automated security scan has detected **{{key_count}} valid {{service_name}} API key{{key_count_plural}}** that {{key_count_verb}} publicly exposed in your repository: **{{repository}}**
+
+This is a courtesy notification to help you secure your credentials.
 
 ### Details
 
@@ -46,6 +50,18 @@ git reflog expire --expire=now --all && git gc --prune=now --aggressive
 
 ---
 
-*This issue was created automatically by [key_hunter](https://github.com/code-zm/key_hunter). Reported on {{timestamp}} UTC*
+### Why did I receive this email?
 
-*If this report helped you secure your repository, please consider giving us a ⭐ on [GitHub](https://github.com/code-zm/key_hunter)!*
+You received this notification because you are either:
+- The owner of the repository **{{repository}}**
+- The author of a commit containing an exposed API key
+
+This notification was sent automatically by [key_hunter](https://github.com/code-zm/key_hunter), an open-source security tool designed to help developers secure their repositories.
+
+**Reported on {{timestamp}} UTC**
+
+If this report helped you secure your repository, please consider giving us a ⭐ on [GitHub](https://github.com/code-zm/key_hunter)!
+
+---
+
+*Please do not reply to this email. This is an automated security notification.*

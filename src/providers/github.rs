@@ -40,6 +40,28 @@ fn default_branch() -> String {
     "main".to_string()
 }
 
+#[derive(Debug, Deserialize)]
+struct GitHubRepoInfo {
+    owner: GitHubAuthor,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitHubCommit {
+    sha: String,
+    commit: GitHubCommitDetails,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitHubCommitDetails {
+    author: GitHubAuthor,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitHubAuthor {
+    #[serde(default)]
+    email: Option<String>,
+}
+
 pub struct GitHubProvider {
     tokens: Vec<String>,
     current_token_idx: std::sync::Arc<std::sync::Mutex<usize>>,
@@ -318,6 +340,99 @@ impl SearchProvider for GitHubProvider {
 
     fn max_results_per_query(&self) -> usize {
         100
+    }
+}
+
+impl GitHubProvider {
+    /// Fetch repository owner's email address
+    /// First tries to get public email from owner's profile, then from repository
+    pub async fn get_repo_owner_email(&self, repo_full_name: &str) -> Result<Option<String>> {
+        let parts: Vec<&str> = repo_full_name.split('/').collect();
+        if parts.len() != 2 {
+            return Ok(None);
+        }
+        let owner = parts[0];
+
+        // Try to get user's public email
+        let user_url = format!("{}/users/{}", self.base_url, owner);
+
+        self.rate_limiter.wait().await;
+
+        let token_opt = self.get_current_token();
+        let response = self.fetch_page(&user_url, token_opt).await?;
+
+        if response.is_success() {
+            if let Ok(user_info) = response.json::<GitHubAuthor>() {
+                if let Some(email) = user_info.email {
+                    if !email.is_empty() {
+                        return Ok(Some(email));
+                    }
+                }
+            }
+        }
+
+        // If no public email, try to get from repo info
+        let repo_url = format!("{}/repos/{}", self.base_url, repo_full_name);
+
+        self.rate_limiter.wait().await;
+
+        let token_opt = self.get_current_token();
+        let response = self.fetch_page(&repo_url, token_opt).await?;
+
+        if response.is_success() {
+            if let Ok(repo_info) = response.json::<GitHubRepoInfo>() {
+                return Ok(repo_info.owner.email);
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Fetch commit author's email address for a specific file
+    /// Gets the most recent commit that modified the file
+    pub async fn get_file_commit_author_email(
+        &self,
+        repo_full_name: &str,
+        file_path: &str,
+        branch: Option<&str>,
+    ) -> Result<(Option<String>, Option<String>)> {
+        let branch = branch.unwrap_or("main");
+
+        // Get commits for this specific file
+        let commits_url = format!(
+            "{}/repos/{}/commits?path={}&sha={}&per_page=1",
+            self.base_url,
+            repo_full_name,
+            urlencoding::encode(file_path),
+            branch
+        );
+
+        self.rate_limiter.wait().await;
+
+        let token_opt = self.get_current_token();
+        let response = self.fetch_page(&commits_url, token_opt).await?;
+
+        if !response.is_success() {
+            debug!("Failed to fetch commits for {}/{}: HTTP {}",
+                   repo_full_name, file_path, response.status_code);
+            return Ok((None, None));
+        }
+
+        let commits: Vec<GitHubCommit> = match response.json() {
+            Ok(c) => c,
+            Err(e) => {
+                debug!("Failed to parse commits response: {}", e);
+                return Ok((None, None));
+            }
+        };
+
+        if let Some(commit) = commits.first() {
+            let email = commit.commit.author.email.clone();
+            let sha = Some(commit.sha.clone());
+            Ok((email, sha))
+        } else {
+            Ok((None, None))
+        }
     }
 }
 

@@ -12,6 +12,9 @@ pub struct DetectedKey {
     pub file_url: String,
     pub line_number: Option<usize>,
     pub context: Option<String>, // Surrounding code
+    pub repo_owner_email: Option<String>, // Repository owner's email
+    pub commit_author_email: Option<String>, // Commit author's email
+    pub commit_sha: Option<String>, // Git commit SHA
 }
 
 /// Result of validating a key against its API

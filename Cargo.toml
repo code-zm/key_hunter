@@ -47,6 +47,9 @@ chrono = { version = "0.4", features = ["serde"] }
 # Environment variables
 dotenv = "0.15"
 
+# Email
+lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "smtp-transport", "builder", "hostname"] }
+
 [dev-dependencies]
 mockall = "0.13"
 tempfile = "3.12"

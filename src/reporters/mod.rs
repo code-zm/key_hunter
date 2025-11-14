@@ -2,24 +2,24 @@ use crate::core::{DetectedKey, ValidationResult};
 use chrono::Utc;
 use std::collections::HashMap;
 
-mod github;
 mod template;
+pub mod email;
 
-pub use github::GitHubIssueClient;
 pub use template::TemplateRenderer;
+pub use email::{EmailClient, SmtpConfig};
 
 /// Service-specific configuration for issue formatting
 #[derive(Clone)]
-struct ServiceConfig {
-    service_name: String,
-    revoke_url: String,
-    additional_actions: String,
-    best_practices: String,
-    resources: String,
+pub struct ServiceConfig {
+    pub service_name: String,
+    pub revoke_url: String,
+    pub additional_actions: String,
+    pub best_practices: String,
+    pub resources: String,
 }
 
 impl ServiceConfig {
-    fn get(key_type: &str) -> Self {
+    pub fn get(key_type: &str) -> Self {
         match key_type {
             "shodan" => Self {
                 service_name: "Shodan".to_string(),

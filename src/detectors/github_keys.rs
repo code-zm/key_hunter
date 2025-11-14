@@ -67,6 +67,9 @@ impl KeyDetector for GitHubKeysDetector {
                     file_url: String::new(),
                     line_number: Some(line_number),
                     context: Some(context),
+                    repo_owner_email: None,
+                    commit_author_email: None,
+                    commit_sha: None,
                 });
             }
         }

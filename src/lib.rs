@@ -47,5 +47,5 @@ pub use core::{
 
 pub use detectors::{all_detectors, get_detector};
 pub use providers::GitHubProvider;
-pub use reporters::{all_reporters, get_reporter, GitHubIssueClient};
+pub use reporters::{all_reporters, get_reporter, EmailClient, SmtpConfig};
 pub use validators::{all_validators, get_validator};

@@ -52,31 +52,32 @@ enabled = true
 
 # Validator rate limits (in milliseconds)
 # These control how fast we validate keys against each service's API
-# Values are conservative to avoid rate limiting errors
+# Default: 500ms = 120 RPM (2 requests per second) - polite rate limiting
+# Note: Most validation endpoints don't enforce strict rate limits
 [validators]
 # OpenAI API - Free tier: 3 RPM, Paid varies greatly
-# Conservative: 1000ms = 60 RPM (1 request per second)
-openai_rate_limit_ms = 1000
+# Default: 500ms = 120 RPM
+openai_rate_limit_ms = 500
 
 # Claude/Anthropic API - Tier 1: 50 RPM, Tier 2: 1,000 RPM
-# Conservative: 2000ms = 30 RPM (matches Tier 1 limit)
-claude_rate_limit_ms = 2000
+# Optimized: 500ms = 120 RPM
+claude_rate_limit_ms = 500
 
 # Google Gemini API - Free: 5 RPM, Paid Tier 1: 300 RPM
-# Conservative: 2000ms = 30 RPM (safe for paid tier)
-gemini_rate_limit_ms = 2000
+# Optimized: 375ms = 160 RPM (tested: 61 req/min with no rate limiting)
+gemini_rate_limit_ms = 375
 
-# Shodan API - Enforced: 1 request per second across all tiers
-# Must use: 1000ms = 60 RPM (1 request per second)
-shodan_rate_limit_ms = 1000
+# Shodan API - ENFORCED: 1 request per second across all tiers
+# Optimized: 1125ms = ~53 RPM (tested: 25 req/min with no rate limiting)
+shodan_rate_limit_ms = 1125
 
-# xAI/Grok API - Default: 480 RPM (~8 RPS)
-# Conservative: 1000ms = 60 RPM (1 request per second)
-xai_rate_limit_ms = 1000
+# xAI/Grok API - Rate limited at 500ms
+# Optimized: 750ms = 80 RPM (got rate limited at 500ms)
+xai_rate_limit_ms = 750
 
 # OpenRouter API - Free tier: 20 RPM, Paid: dynamic based on balance
-# Conservative: 3000ms = 20 RPM (free tier limit)
-openrouter_rate_limit_ms = 3000
+# Optimized: 375ms = 160 RPM (tested: 42 req/min with no rate limiting)
+openrouter_rate_limit_ms = 375
 
 # GitHub API - Primary: 5,000/hour, Secondary: 900 points/minute
 # Conservative: 2000ms = 30 RPM (safe for secondary limit)
